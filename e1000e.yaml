@@ -1,0 +1,6 @@
+machine:
+  kernel:
+    # Kernel modules to load.
+    modules:
+    - name: e1000e # Module name.
+    - parameters: ["Node=0"]
