@@ -30,8 +30,7 @@ jobs:
           version: '3.15.2'
           command: template
           command-args: cilium cilium/cilium
-          flags: >
-          --version 1.15.6
+          flags: > "--version 1.15.6
           --namespace kube-system
           --set hubble.relay.enabled=true
           --set hubble.ui.enabled=true
@@ -42,7 +41,7 @@ jobs:
           --set cgroup.autoMount.enabled=false
           --set cgroup.hostRoot=/sys/fs/cgroup
           --set k8sServiceHost=localhost
-          --set k8sServicePort=7445 > cilium.yaml
+          --set k8sServicePort=7445 > cilium.yaml"
 
 # helm template \
 #     cilium \
