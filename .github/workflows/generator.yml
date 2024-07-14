@@ -1,6 +1,6 @@
 # This is a basic workflow to help you get started with Actions
 
-name: CI
+name: Generate helm template
 
 # Controls when the workflow will run
 on:
@@ -29,14 +29,16 @@ jobs:
         with:
           version: '3.15.3'
           command: template
-          command-args: cilium cilium/cilium
+          args: cilium cilium/cilium
           flags: --version 1.15.6 --namespace kube-system --set hubble.relay.enabled=true --set hubble.ui.enabled=true --set ipam.mode=kubernetes --set kubeProxyReplacement=true --set securityContext.capabilities.ciliumAgent="{CHOWN,KILL,NET_ADMIN,NET_RAW,IPC_LOCK,SYS_ADMIN,SYS_RESOURCE,DAC_OVERRIDE,FOWNER,SETGID,SETUID}" --set securityContext.capabilities.cleanCiliumState="{NET_ADMIN,SYS_ADMIN,SYS_RESOURCE}" --set cgroup.autoMount.enabled=false --set cgroup.hostRoot=/sys/fs/cgroup --set k8sServiceHost=localhost --set k8sServicePort=7445 > cilium.yaml
 
 # helm template \
 #     cilium \
 #     cilium/cilium \
-#     --version 1.15.6 \
+#     --version 1.15.7 \
 #     --namespace kube-system \
+#     --set hubble.relay.enabled=true \
+#     --set hubble.ui.enabled=true \
 #     --set ipam.mode=kubernetes \
 #     --set kubeProxyReplacement=true \
 #     --set securityContext.capabilities.ciliumAgent="{CHOWN,KILL,NET_ADMIN,NET_RAW,IPC_LOCK,SYS_ADMIN,SYS_RESOURCE,DAC_OVERRIDE,FOWNER,SETGID,SETUID}" \
@@ -44,7 +46,13 @@ jobs:
 #     --set cgroup.autoMount.enabled=false \
 #     --set cgroup.hostRoot=/sys/fs/cgroup \
 #     --set k8sServiceHost=localhost \
-#     --set k8sServicePort=7445 > cilium.yaml
+#     --set k8sServicePort=7445 \
+#     --set prometheus.enabled=true \
+#     --set operator.prometheus.enabled=true \
+#     --set hubble.enabled=true \
+#     --set hubble.metrics.enableOpenMetrics=true \
+#     --set hubble.metrics.enabled="{dns,drop,tcp,flow,port-distribution,icmp,httpV2:exemplars=true;labelsContext=source_ip\,source_namespace\,source_workload\,destination_ip\,destination_namespace\,destination_workload\,traffic_direction}" \
+#     > cilium.yaml
 #
 # kubectl apply -f cilium.yaml
 
