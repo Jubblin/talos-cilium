@@ -62,8 +62,9 @@ jobs:
       - name: Push changes
         run: |
           printenv
-          git config user.email "you@example.com"
-          git config user.name "Your Name"
+          EMAIL=$(echo ${GITHUB_REPOSITORY} | awk -F / {'$2"@"$1".github.com"'}}
+          git config user.email ${EMAIL}
+          git config user.name ${GITHUB_ACTOR}
           if [[ -z "$(git status --porcelain)" ]]; then echo "No changes to commit"; exit 0; fi
           echo "Changes found. Proceeding with commit and push."
           git add .
