@@ -57,8 +57,16 @@ jobs:
           --set hubble.enabled=true
           --set hubble.metrics.enableOpenMetrics=true
           --set hubble.metrics.enabled="{dns,drop,tcp,flow,port-distribution,icmp,httpV2:exemplars=true;labelsContext=source_ip\,source_namespace\,source_workload\,destination_ip\,destination_namespace\,destination_workload\,traffic_direction}"
-          > cilium.yaml && pwd && find ./
-
+          > cilium.yaml
+          
+      - name: Push changes
+        run: |
+          if [[ -z "$(git status --porcelain)" ]]; then echo "No changes to commit"; exit 0; fi
+          echo "Changes found. Proceeding with commit and push."
+          git add .
+          git commit -m "Creating gitops manifest for $(basename $TARGET_FOLDER)"
+          git push
+        
 # helm template \
 #     cilium \
 #     cilium/cilium \
