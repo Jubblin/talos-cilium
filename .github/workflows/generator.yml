@@ -64,11 +64,11 @@ jobs:
           EMAIL=$(echo $GITHUB_REPOSITORY | awk -F / '{print $2"@"$1".github.com"}')
           git config user.email ${EMAIL}
           git config user.name ${GITHUB_ACTOR}
-          # if [[ -z "$(git status --porcelain)" ]]; then echo "No changes to commit"; exit 0; fi
-          # echo "Changes found. Proceeding with commit and push."
-          # git add .
-          # git commit -m "Creating gitops manifest for $(basename $TARGET_FOLDER)"
-          # git push
+          if [[ -z "$(git status --porcelain)" ]]; then echo "No changes to commit"; exit 0; fi
+          echo "Changes found. Proceeding with commit and push."
+          git add .
+          git commit -m "Creating gitops manifest for $(basename $TARGET_FOLDER)"
+          git push
         
 # helm template \
 #     cilium \
