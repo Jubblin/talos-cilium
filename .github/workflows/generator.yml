@@ -61,9 +61,7 @@ jobs:
           
       - name: Push changes
         run: |
-          printenv
-          EMAIL=$(echo ${GITHUB_REPOSITORY} | awk -F / {'$2"@"$1".github.com"'}}
-          echo $EMAIL
+          EMAIL=$(echo $GITHUB_REPOSITORY | awk -F / '{print $2"@"$1".github.com"}')
           git config user.email ${EMAIL}
           git config user.name ${GITHUB_ACTOR}
           # if [[ -z "$(git status --porcelain)" ]]; then echo "No changes to commit"; exit 0; fi
