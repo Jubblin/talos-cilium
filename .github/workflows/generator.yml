@@ -61,6 +61,9 @@ jobs:
           
       - name: Push changes
         run: |
+          printenv
+          git config user.email "you@example.com"
+          git config user.name "Your Name"
           if [[ -z "$(git status --porcelain)" ]]; then echo "No changes to commit"; exit 0; fi
           echo "Changes found. Proceeding with commit and push."
           git add .
