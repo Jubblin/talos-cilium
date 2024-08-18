@@ -1,6 +1,4 @@
-# This is a basic workflow to help you get started with Actions
-
-name: Generate helm template
+name: Helm template generator
 
 # Controls when the workflow will run
 on:
@@ -8,9 +6,11 @@ on:
   push:
     paths:
     - .github/workflows/generator.yml
+    - versions
   pull_request:
     paths:
     - .github/workflows/generator.yml
+    - versions
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
@@ -20,15 +20,20 @@ permissions:
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   # This workflow contains a single job called "build"
-  build:
+  generator:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v4
-
+      - name: Checkout git repository
+        uses: actions/checkout@v4
+      - name: Import variables
+        run: |
+          source versions
+          echo ${CILIUM_VERSION}
+          
       - name: Install Helm cli
         run: >
           curl -sSL https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash &&
@@ -40,28 +45,31 @@ jobs:
           helm repo update
         
       - name: Generate helm template
-        run: >
-          helm template
-          cilium
-          cilium/cilium
-          --version 1.16.0
-          --namespace kube-system
-          --set hubble.relay.enabled=true
-          --set hubble.ui.enabled=true
-          --set ipam.mode=kubernetes
-          --set kubeProxyReplacement=true
-          --set securityContext.capabilities.ciliumAgent="{CHOWN,KILL,NET_ADMIN,NET_RAW,IPC_LOCK,SYS_ADMIN,SYS_RESOURCE,DAC_OVERRIDE,FOWNER,SETGID,SETUID}"
-          --set securityContext.capabilities.cleanCiliumState="{NET_ADMIN,SYS_ADMIN,SYS_RESOURCE}"
-          --set cgroup.autoMount.enabled=false
-          --set cgroup.hostRoot=/sys/fs/cgroup
-          --set k8sServiceHost=localhost
-          --set k8sServicePort=7445
-          --set prometheus.enabled=true
-          --set operator.prometheus.enabled=true
-          --set hubble.enabled=true
-          --set hubble.metrics.enableOpenMetrics=true
-          --set hubble.metrics.enabled="{dns,drop,tcp,flow,port-distribution,icmp,httpV2:exemplars=true;labelsContext=source_ip\,source_namespace\,source_workload\,destination_ip\,destination_namespace\,destination_workload\,traffic_direction}"
-          > cilium.yaml
+        run: echo ${CILIUM_VERSION}
+        # run: >
+        #   source versions &&
+        #   echo Executing template generation for Cilium ${CILIUM_VERSION}
+        #   helm template
+        #   cilium
+        #   cilium/cilium
+        #   --version ${CILIUM_VERSION}
+        #   --namespace kube-system
+        #   --set hubble.relay.enabled=true
+        #   --set hubble.ui.enabled=true
+        #   --set ipam.mode=kubernetes
+        #   --set kubeProxyReplacement=true
+        #   --set securityContext.capabilities.ciliumAgent="{CHOWN,KILL,NET_ADMIN,NET_RAW,IPC_LOCK,SYS_ADMIN,SYS_RESOURCE,DAC_OVERRIDE,FOWNER,SETGID,SETUID}"
+        #   --set securityContext.capabilities.cleanCiliumState="{NET_ADMIN,SYS_ADMIN,SYS_RESOURCE}"
+        #   --set cgroup.autoMount.enabled=false
+        #   --set cgroup.hostRoot=/sys/fs/cgroup
+        #   --set k8sServiceHost=localhost
+        #   --set k8sServicePort=7445
+        #   --set prometheus.enabled=true
+        #   --set operator.prometheus.enabled=true
+        #   --set hubble.enabled=true
+        #   --set hubble.metrics.enableOpenMetrics=true
+        #   --set hubble.metrics.enabled="{dns,drop,tcp,flow,port-distribution,icmp,httpV2:exemplars=true;labelsContext=source_ip\,source_namespace\,source_workload\,destination_ip\,destination_namespace\,destination_workload\,traffic_direction}"
+        #   > cilium.yaml
           
       - name: Push changes
         run: |
