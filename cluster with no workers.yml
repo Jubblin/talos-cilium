@@ -1,0 +1,9 @@
+cluster:
+  allowSchedulingOnControlPlanes: true
+  network:
+    cni:
+      name: custom
+      urls:
+        - https://raw.githubusercontent.com/Jubblin/talos-cilium/main/cilium.yaml
+  proxy:
+    disabled: true
