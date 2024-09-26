@@ -46,9 +46,9 @@ jobs:
 
       - name: Generate helm template
         # run: echo ${CILIUM_VERSION}
-        run: >
-          source versions &&
-          echo Executing template generation for Cilium ${CILIUM_VERSION} && 
+        run: |
+          source versions
+          echo Executing template generation for Cilium ${CILIUM_VERSION} 
           helm template cilium \
           cilium/cilium \ 
           --version ${CILIUM_VERSION} \
