@@ -48,8 +48,10 @@ jobs:
         # run: echo ${CILIUM_VERSION}
         run: >
           source versions &&
-          echo Executing template generation for Cilium ${CILIUM_VERSION}
-          helm template cilium cilium/cilium --version ${CILIUM_VERSION} \
+          echo Executing template generation for Cilium ${CILIUM_VERSION} && 
+          helm template cilium \
+          cilium/cilium \ 
+          --version ${CILIUM_VERSION} \
           --namespace kube-system \
           --set hubble.relay.enabled=true \
           --set hubble.ui.enabled=true \
