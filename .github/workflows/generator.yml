@@ -49,10 +49,7 @@ jobs:
         run: >
           source versions &&
           echo Executing template generation for Cilium ${CILIUM_VERSION}
-          helm template \
-          cilium \
-          cilium/cilium \
-          --version ${CILIUM_VERSION} \
+          helm template cilium cilium/cilium --version ${CILIUM_VERSION} \
           --namespace kube-system \
           --set hubble.relay.enabled=true \
           --set hubble.ui.enabled=true \
@@ -70,8 +67,7 @@ jobs:
           --set encryption.type=wireguard \
           --set hubble.enabled=true \
           --set hubble.metrics.enableOpenMetrics=true \
-          --set hubble.metrics.enabled="{dns,drop,tcp,flow,port-distribution,icmp,httpV2:exemplars=true;labelsContext=source_ip\,source_namespace\,source_workload\,destination_ip\,destination_namespace\,destination_workload\,traffic_direction}" \
-          > cilium.yaml
+          --set hubble.metrics.enabled="{dns,drop,tcp,flow,port-distribution,icmp,httpV2:exemplars=true;labelsContext=source_ip\,source_namespace\,source_workload\,destination_ip\,destination_namespace\,destination_workload\,traffic_direction}" > cilium.yaml
 
       - name: Push changes
         run: |
