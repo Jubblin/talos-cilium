@@ -44,7 +44,7 @@ jobs:
           helm repo add cilium https://helm.cilium.io/ &&
           helm repo update
 
-      - name: Generate helm template
+      - name: Generate Cilium template
         # run: echo ${CILIUM_VERSION}
         run: |
           source versions
@@ -69,6 +69,15 @@ jobs:
           --set securityContext.capabilities.ciliumAgent="{CHOWN,KILL,NET_ADMIN,NET_RAW,IPC_LOCK,SYS_ADMIN,SYS_RESOURCE,DAC_OVERRIDE,FOWNER,SETGID,SETUID}" \
           --set securityContext.capabilities.cleanCiliumState="{NET_ADMIN,SYS_ADMIN,SYS_RESOURCE}" \
           > cilium.yaml
+
+      - name: Generate Tetragon template
+        # run: echo ${CILIUM_VERSION}
+        run: |
+          source versions
+          echo Executing template generation for Tetragon
+          helm template tetragon cilium/tetragon -n kube-system \
+          --namespace kube-system \
+          > tetragon.yaml
 
       - name: Push changes
         run: |
