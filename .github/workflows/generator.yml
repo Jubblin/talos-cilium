@@ -21,6 +21,9 @@ permissions:
 jobs:
   # This workflow contains a single job called "build"
   generator:
+    strategy:
+      matrix:
+        replicas: [1, 2, 3]
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
 
@@ -51,13 +54,14 @@ jobs:
           echo Executing template generation for Cilium ${CILIUM_VERSION} 
           helm template cilium cilium/cilium --version ${CILIUM_VERSION} \
           --namespace kube-system \
+          --set operator.replicas=${{ matrix.replicas }} \
           --set cgroup.autoMount.enabled=false \
           --set cgroup.hostRoot=/sys/fs/cgroup \
           --set encryption.enabled=true \
           --set encryption.type=wireguard \
           --set hubble.enabled=true \
           --set hubble.metrics.enableOpenMetrics=true \
-          --set hubble.metrics.enabled="{dns,drop,tcp,flow,port-distribution,icmp,httpV2:exemplars=true;labelsContext=source_ip\,source_namespace\,source_workload\,destination_ip\,destination_namespace\,destination_workload\,traffic_direction}" \
+          --set hubble.met rics.enabled="{dns,drop,tcp,flow,port-distribution,icmp,httpV2:exemplars=true;labelsContext=source_ip\,source_namespace\,source_workload\,destination_ip\,destination_namespace\,destination_workload\,traffic_direction}" \
           --set hubble.relay.enabled=true \
           --set hubble.ui.enabled=true \
           --set ipam.mode=kubernetes \
@@ -68,7 +72,7 @@ jobs:
           --set prometheus.enabled=true \
           --set securityContext.capabilities.ciliumAgent="{CHOWN,KILL,NET_ADMIN,NET_RAW,IPC_LOCK,SYS_ADMIN,SYS_RESOURCE,DAC_OVERRIDE,FOWNER,SETGID,SETUID}" \
           --set securityContext.capabilities.cleanCiliumState="{NET_ADMIN,SYS_ADMIN,SYS_RESOURCE}" \
-          > cilium.yaml
+          > cilium-${{ matrix.replicas }}.yaml
 
       - name: Generate Tetragon template
         # run: echo ${CILIUM_VERSION}
