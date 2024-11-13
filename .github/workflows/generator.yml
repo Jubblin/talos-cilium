@@ -36,6 +36,7 @@ jobs:
         run: |
           source versions
           echo ${CILIUM_VERSION}
+          echo ${TETRAGON_VERSION}
 
       - name: Install Helm cli
         run: >
@@ -78,8 +79,8 @@ jobs:
         # run: echo ${CILIUM_VERSION}
         run: |
           source versions
-          echo Executing template generation for Tetragon
-          helm template tetragon cilium/tetragon -n kube-system \
+          echo Executing template generation for Tetragon  ${TETRAGON_VERSION}
+          helm template tetragon cilium/tetragon -n kube-system --version  ${TETRAGON_VERSION} \
           --namespace kube-system \
           > tetragon.yaml
 
