@@ -20,10 +20,7 @@ permissions:
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   # This workflow contains a single job called "build"
-  generator:
-    strategy:
-      matrix:
-        replicas: [1, 2, 3]
+  setup:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
 
@@ -32,11 +29,6 @@ jobs:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - name: Checkout git repository
         uses: actions/checkout@v4
-      - name: Import variables
-        run: |
-          source versions
-          echo ${CILIUM_VERSION}
-          echo ${TETRAGON_VERSION}
 
       - name: Install Helm cli
         run: >
@@ -48,6 +40,14 @@ jobs:
           helm repo add cilium https://helm.cilium.io/ &&
           helm repo update
 
+  cilium:
+    strategy:
+      matrix:
+        replicas: [1, 2, 3]
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest    
+    needs: setup
+    steps:
       - name: Generate Cilium template
         # run: echo ${CILIUM_VERSION}
         run: |
@@ -75,15 +75,25 @@ jobs:
           --set securityContext.capabilities.cleanCiliumState="{NET_ADMIN,SYS_ADMIN,SYS_RESOURCE}" \
           > cilium-${{ matrix.replicas }}.yaml
 
+  tetragon:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest    
+    needs: cilium
+    steps:
       - name: Generate Tetragon template
         # run: echo ${CILIUM_VERSION}
         run: |
           source versions
           echo Executing template generation for Tetragon  ${TETRAGON_VERSION}
-          helm template tetragon cilium/tetragon -n kube-system --version  ${TETRAGON_VERSION} \
+          helm template tetragon cilium/tetragon -n kube-system --version ${TETRAGON_VERSION} \
           --namespace kube-system \
           > tetragon.yaml
 
+  push:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest    
+    needs: tetragon
+    steps:
       - name: Push changes
         run: |
           EMAIL=$(echo $GITHUB_REPOSITORY | awk -F / '{print $2"@"$1".github.com"}')
