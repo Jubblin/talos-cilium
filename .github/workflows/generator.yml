@@ -20,12 +20,19 @@ permissions:
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   # This workflow contains a single job called "build"
-  setup:
+  generator:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - name: Checkout git repository
+        uses: actions/checkout@v4
+      - name: Import variables
+        run: |
+          source versions
+          echo ${CILIUM_VERSION}
       - name: Install Helm cli
         run: >
           curl -sSL https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash &&
@@ -34,25 +41,13 @@ jobs:
         run: >
           helm repo add cilium https://helm.cilium.io/ &&
           helm repo update
-  cilium:
-    strategy:
-      matrix:
-        replicas: [1, 2, 3]
-    # The type of runner that the job will run on
-    runs-on: ubuntu-latest    
-    needs: setup
-    steps:
-      - name: Checkout git repository
-        uses: actions/checkout@v4
-        
+          
       - name: Generate Cilium template
-        # run: echo ${CILIUM_VERSION}
         run: |
           source versions
           echo Executing template generation for Cilium ${CILIUM_VERSION} 
           helm template cilium cilium/cilium --version ${CILIUM_VERSION} \
           --namespace kube-system \
-          --set operator.replicas=${{ matrix.replicas }} \
           --set cgroup.autoMount.enabled=false \
           --set cgroup.hostRoot=/sys/fs/cgroup \
           --set encryption.enabled=true \
@@ -70,35 +65,16 @@ jobs:
           --set prometheus.enabled=true \
           --set securityContext.capabilities.ciliumAgent="{CHOWN,KILL,NET_ADMIN,NET_RAW,IPC_LOCK,SYS_ADMIN,SYS_RESOURCE,DAC_OVERRIDE,FOWNER,SETGID,SETUID}" \
           --set securityContext.capabilities.cleanCiliumState="{NET_ADMIN,SYS_ADMIN,SYS_RESOURCE}" \
-          > cilium-${{ matrix.replicas }}.yaml
-      - name: Push changes
-        run: |
-          EMAIL=$(echo $GITHUB_REPOSITORY | awk -F / '{print $2"@"$1".github.com"}')
-          git config user.email ${EMAIL}
-          git config user.name ${GITHUB_ACTOR}
-          if [[ -z "$(git status --porcelain)" ]]; then echo "No changes to commit"; exit 0; fi
-          echo "Changes found. Proceeding with commit and push."
-          git add .
-          git commit -m "Creating updated cilium manifest for $GITHUB_REPOSITORY"
-          git push
-
-  tetragon:
-    # The type of runner that the job will run on
-    runs-on: ubuntu-latest    
-    needs: cilium
-    steps:
-      - name: Checkout git repository
-        uses: actions/checkout@v4
-        
+          > cilium.yaml
+          
       - name: Generate Tetragon template
-        # run: echo ${CILIUM_VERSION}
         run: |
           source versions
-          echo Executing template generation for Tetragon  ${TETRAGON_VERSION}
-          helm template tetragon cilium/tetragon -n kube-system --version ${TETRAGON_VERSION} \
+          echo Executing template generation for Tetragon ${TETRAGON_VERSION}
+          helm template tetragon cilium/tetragon -n kube-system  --version ${TETRAGON_VERSION} \
           --namespace kube-system \
           > tetragon.yaml
-
+          
       - name: Push changes
         run: |
           EMAIL=$(echo $GITHUB_REPOSITORY | awk -F / '{print $2"@"$1".github.com"}')
@@ -107,5 +83,5 @@ jobs:
           if [[ -z "$(git status --porcelain)" ]]; then echo "No changes to commit"; exit 0; fi
           echo "Changes found. Proceeding with commit and push."
           git add .
-          git commit -m "Creating updated tetragon manifest for $GITHUB_REPOSITORY"
+          git commit -m "Creating gitops manifest for $GITHUB_REPOSITORY"
           git push
