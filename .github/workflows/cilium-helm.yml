@@ -1,0 +1,105 @@
+name: Helm template generator for Tetragon
+
+# Controls when the workflow will run
+on:
+  # Triggers the workflow on push or pull request events but only for the "main" branch
+  push:
+    paths:
+      - .github/workflows/cilium-helm.yml
+      - versions
+  pull_request:
+    paths:
+      - .github/workflows/cilium-helm.yml
+      - versions
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  tetragon:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - name: Checkout git repository
+        uses: actions/checkout@v4
+      - name: Import variables
+        run: |
+          source versions
+          echo ${CILIUM_VERSION}
+      - name: Install Helm cli
+        run: >
+          curl -sSL https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash &&
+          helm version --short
+      - name: Add helm repo
+        run: >
+          helm repo add cilium https://helm.cilium.io/ &&
+          helm repo update
+          
+      - name: Generate Cilium template
+        run: |
+          source versions
+          echo Executing template generation for Cilium ${CILIUM_VERSION} 
+          helm template cilium cilium/cilium --version ${CILIUM_VERSION} \
+          --namespace kube-system \
+          --set cgroup.autoMount.enabled=false \
+          --set cgroup.hostRoot=/sys/fs/cgroup \
+          --set encryption.enabled=true \
+          --set encryption.type=wireguard \
+          --set hubble.enabled=true \
+          --set hubble.metrics.enableOpenMetrics=true \
+          --set hubble.metrics.enabled="{dns,drop,tcp,flow,port-distribution,icmp,httpV2:exemplars=true;labelsContext=source_ip\,source_namespace\,source_workload\,destination_ip\,destination_namespace\,destination_workload\,traffic_direction}" \
+          --set hubble.relay.enabled=true \
+          --set hubble.ui.enabled=true \
+          --set ipam.mode=kubernetes \
+          --set k8sServiceHost=localhost \
+          --set k8sServicePort=7445 \
+          --set kubeProxyReplacement=true \
+          --set operator.prometheus.enabled=true \
+          --set prometheus.enabled=true \
+          --set securityContext.capabilities.ciliumAgent="{CHOWN,KILL,NET_ADMIN,NET_RAW,IPC_LOCK,SYS_ADMIN,SYS_RESOURCE,DAC_OVERRIDE,FOWNER,SETGID,SETUID}" \
+          --set securityContext.capabilities.cleanCiliumState="{NET_ADMIN,SYS_ADMIN,SYS_RESOURCE}" \
+          > cilium.yaml
+
+      - name: Generate Single Node Cilium template
+        run: |
+          source versions
+          echo Executing template generation for Cilium ${CILIUM_VERSION} 
+          helm template cilium cilium/cilium --version ${CILIUM_VERSION} \
+          --namespace kube-system \
+          --set operator.replicas=1 \
+          --set cgroup.autoMount.enabled=false \
+          --set cgroup.hostRoot=/sys/fs/cgroup \
+          --set encryption.enabled=true \
+          --set encryption.type=wireguard \
+          --set hubble.enabled=true \
+          --set hubble.metrics.enableOpenMetrics=true \
+          --set hubble.metrics.enabled="{dns,drop,tcp,flow,port-distribution,icmp,httpV2:exemplars=true;labelsContext=source_ip\,source_namespace\,source_workload\,destination_ip\,destination_namespace\,destination_workload\,traffic_direction}" \
+          --set hubble.relay.enabled=true \
+          --set hubble.ui.enabled=true \
+          --set ipam.mode=kubernetes \
+          --set k8sServiceHost=localhost \
+          --set k8sServicePort=7445 \
+          --set kubeProxyReplacement=true \
+          --set operator.prometheus.enabled=true \
+          --set prometheus.enabled=true \
+          --set securityContext.capabilities.ciliumAgent="{CHOWN,KILL,NET_ADMIN,NET_RAW,IPC_LOCK,SYS_ADMIN,SYS_RESOURCE,DAC_OVERRIDE,FOWNER,SETGID,SETUID}" \
+          --set securityContext.capabilities.cleanCiliumState="{NET_ADMIN,SYS_ADMIN,SYS_RESOURCE}" \
+          > cilium-single-node.yaml
+          
+      - name: Push changes
+        run: |
+          EMAIL=$(echo $GITHUB_REPOSITORY | awk -F / '{print $2"@"$1".github.com"}')
+          git config user.email ${EMAIL}
+          git config user.name ${GITHUB_ACTOR}
+          if [[ -z "$(git status --porcelain)" ]]; then echo "No changes to commit"; exit 0; fi
+          echo "Changes found. Proceeding with commit and push."
+          git add .
+          git commit -m "Updating Helm template for Cilium ${CILIUM_VERSION}"
+          git push
