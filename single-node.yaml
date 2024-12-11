@@ -12,3 +12,4 @@ cluster:
     - https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
     - https://raw.githubusercontent.com/cilium/cilium/refs/heads/main/examples/kubernetes/addons/prometheus/monitoring-example.yaml
     - https://raw.githubusercontent.com/Jubblin/talos-cilium/main/tetragon.yaml
+    - https://github.com/controlplaneio-fluxcd/flux-operator/releases/latest/download/install.yaml
