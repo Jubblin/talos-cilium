@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fluxcd
+  namespace: flux-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fluxcd
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fluxcd-role
+  namespace: flux-system
+rules:
+- apiGroups: [""]
+  resources: ["deployments", "services", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fluxcd-role-binding
+  namespace: flux-system
+subjects:
+- kind: ServiceAccount
+  name: fluxcd
+  namespace: flux-system
+roleRef:
+  kind: Role
+  name: fluxcd-role
+  apiGroup: rbac.authorization.k8s.io
+  
