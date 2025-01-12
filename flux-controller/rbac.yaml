@@ -32,4 +32,17 @@ roleRef:
   kind: Role
   name: fluxcd-role
   apiGroup: rbac.authorization.k8s.io
-  
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fluxcd-role-binding
+  namespace: flux-system
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: flux-system
+roleRef:
+  kind: Role
+  name: fluxcd-role
+  apiGroup: rbac.authorization.k8s.io
