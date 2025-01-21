@@ -50,6 +50,15 @@ jobs:
           --namespace kube-system \
           > tetragon.yaml
           
+      - name: Generate Single Node Tetragon template
+        run: |
+          source versions
+          echo Executing template generation for Tetragon ${TETRAGON_VERSION}
+          helm template tetragon cilium/tetragon -n kube-system  --version ${TETRAGON_VERSION} \
+          --set operator.replicas=1 \
+          --namespace kube-system \
+          > tetragon-single-node.yaml
+          
       - name: Push changes
         run: |
           EMAIL=$(echo $GITHUB_REPOSITORY | awk -F / '{print $2"@"$1".github.com"}')
