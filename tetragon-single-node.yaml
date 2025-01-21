@@ -38,7 +38,7 @@ metadata:
     app.kubernetes.io/version: "1.2.0"
     app.kubernetes.io/managed-by: Helm
 data:
-  skip-crd-creation:
+  skip-crd-creation: 
   skip-pod-info-crd: "true"
   skip-tracing-policy-crd: "false"
   force-update-crds: "false"
@@ -72,9 +72,9 @@ data:
     {"health_check":true}
     {"namespace":["", "cilium", "kube-system"]}
   field-filters: |-
-
+    
   redaction-filters: |-
-
+    
   export-rate-limit: "-1"
   enable-k8s-api: "true"
   metrics-server: :2112
@@ -300,79 +300,82 @@ spec:
     spec:
       serviceAccountName: tetragon
       initContainers:
-
+      
       containers:
-        - name: export-stdout
-          image: "quay.io/cilium/hubble-export-stdout:v1.0.4"
-          imagePullPolicy: IfNotPresent
-          terminationMessagePolicy: FallbackToLogsOnError
-          env: []
-          securityContext: {}
-          resources: {}
-          command:
-            - hubble-export-stdout
-          args:
-            - /var/run/cilium/tetragon/tetragon.log
-          volumeMounts:
-            - name: export-logs
-              mountPath: /var/run/cilium/tetragon
-        - name: tetragon
-          securityContext:
-            privileged: true
-          image: "quay.io/cilium/tetragon:v1.2.0"
-          imagePullPolicy: IfNotPresent
-          terminationMessagePolicy: FallbackToLogsOnError
-          args:
-            - --config-dir=/etc/tetragon/tetragon.conf.d/
-          volumeMounts:
-            - mountPath: /etc/tetragon/tetragon.conf.d/
-              name: tetragon-config
-              readOnly: true
-            - mountPath: /sys/fs/bpf
-              mountPropagation: Bidirectional
-              name: bpf-maps
-            - mountPath: "/var/run/cilium"
-              name: cilium-run
-            - mountPath: /var/run/cilium/tetragon
-              name: export-logs
-            - mountPath: "/procRoot"
-              name: host-proc
-
-          env:
-            - name: NODE_NAME
-              valueFrom:
-                fieldRef:
+      - name: export-stdout
+        image: "quay.io/cilium/hubble-export-stdout:v1.0.4"
+        imagePullPolicy: IfNotPresent
+        terminationMessagePolicy: FallbackToLogsOnError
+        env:
+          []
+        securityContext:
+          {}
+        resources:
+          {}  
+        command:
+          - hubble-export-stdout  
+        args:
+          - /var/run/cilium/tetragon/tetragon.log
+        volumeMounts:
+          - name: export-logs
+            mountPath: /var/run/cilium/tetragon
+      - name: tetragon
+        securityContext:
+          privileged: true
+        image: "quay.io/cilium/tetragon:v1.2.0"
+        imagePullPolicy: IfNotPresent
+        terminationMessagePolicy: FallbackToLogsOnError
+        args:
+          - --config-dir=/etc/tetragon/tetragon.conf.d/
+        volumeMounts:
+          - mountPath: /etc/tetragon/tetragon.conf.d/
+            name: tetragon-config
+            readOnly: true
+          - mountPath: /sys/fs/bpf
+            mountPropagation: Bidirectional
+            name: bpf-maps
+          - mountPath: "/var/run/cilium"
+            name: cilium-run
+          - mountPath: /var/run/cilium/tetragon
+            name: export-logs
+          - mountPath: "/procRoot"
+            name: host-proc
+          
+        env:
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
                   fieldPath: spec.nodeName
-          livenessProbe:
-            timeoutSeconds: 60
-            grpc:
-              port: 6789
-              service: "liveness"
+        livenessProbe:
+           timeoutSeconds: 60
+           grpc:
+            port: 6789
+            service: "liveness"
       tolerations:
         - operator: Exists
       hostNetwork: true
       dnsPolicy: Default
       terminationGracePeriodSeconds: 1
       volumes:
-        - name: cilium-run
-          hostPath:
-            path: /var/run/cilium
-            type: DirectoryOrCreate
-        - name: export-logs
-          hostPath:
-            path: /var/run/cilium/tetragon
-            type: DirectoryOrCreate
-        - name: tetragon-config
-          configMap:
-            name: tetragon-config
-        - name: bpf-maps
-          hostPath:
-            path: /sys/fs/bpf
-            type: DirectoryOrCreate
-        - name: host-proc
-          hostPath:
-            path: /proc
-            type: Directory
+      - name: cilium-run
+        hostPath:
+          path: /var/run/cilium
+          type: DirectoryOrCreate
+      - name: export-logs
+        hostPath:
+          path: /var/run/cilium/tetragon
+          type: DirectoryOrCreate
+      - name: tetragon-config
+        configMap:
+          name: tetragon-config
+      - name: bpf-maps
+        hostPath:
+          path: /sys/fs/bpf
+          type: DirectoryOrCreate
+      - name: host-proc
+        hostPath:
+          path: /proc
+          type: Directory
 ---
 # Source: tetragon/templates/operator_deployment.yaml
 apiVersion: apps/v1
@@ -391,7 +394,7 @@ spec:
     matchLabels:
       app.kubernetes.io/name: "tetragon-operator"
       app.kubernetes.io/instance: tetragon
-  replicas: 0
+  replicas: 1
   template:
     metadata:
       labels:
@@ -402,47 +405,47 @@ spec:
         app.kubernetes.io/managed-by: Helm
     spec:
       containers:
-        - name: tetragon-operator
-          command:
-            - /usr/bin/tetragon-operator
-          args:
-            - serve
-            - --config-dir=/etc/tetragon/operator.conf.d/
-            - --metrics-bind-address=:2113
-          image: "quay.io/cilium/tetragon-operator:v1.2.0"
-          imagePullPolicy: IfNotPresent
-          volumeMounts:
-            - mountPath: /etc/tetragon/operator.conf.d/
-              name: tetragon-operator-config
-              readOnly: true
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-          ports:
-            - name: metrics
-              containerPort: 2113
-              protocol: TCP
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: 8081
-            initialDelaySeconds: 15
-            periodSeconds: 20
-          readinessProbe:
-            httpGet:
-              path: /readyz
-              port: 8081
-            initialDelaySeconds: 5
-            periodSeconds: 10
-          resources:
-            limits:
-              cpu: 500m
-              memory: 128Mi
-            requests:
-              cpu: 10m
-              memory: 64Mi
+      - name: tetragon-operator
+        command:
+          - /usr/bin/tetragon-operator
+        args:
+          - serve
+          - --config-dir=/etc/tetragon/operator.conf.d/
+          - --metrics-bind-address=:2113
+        image: "quay.io/cilium/tetragon-operator:v1.2.0"
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+          - mountPath: /etc/tetragon/operator.conf.d/
+            name: tetragon-operator-config
+            readOnly: true
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        ports:
+          - name: metrics
+            containerPort: 2113
+            protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
       tolerations:
         - operator: Exists
       serviceAccountName: tetragon-operator-service-account
