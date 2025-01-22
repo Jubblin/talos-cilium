@@ -8,5 +8,5 @@ cluster:
   proxy:
     disabled: true
   extraManifests:
-    - https://raw.githubusercontent.com/Jubblin/talos-cilium/main/tetragon-side-node.yaml
+    - https://raw.githubusercontent.com/Jubblin/talos-cilium/main/tetragon-single-node.yaml
     - https://github.com/controlplaneio-fluxcd/flux-operator/releases/latest/download/install.yaml
