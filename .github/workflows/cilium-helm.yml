@@ -1,4 +1,4 @@
-name: Helm template generator for Tetragon
+name: Helm template generator for Cilium
 
 # Controls when the workflow will run
 on:
@@ -26,13 +26,6 @@ jobs:
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - name: Checkout git repository
-        uses: actions/checkout@v4
-      - name: Import variables
-        run: |
-          source versions
-          echo ${CILIUM_VERSION}
       - name: Install Helm cli
         run: >
           curl -sSL https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash &&
@@ -41,8 +34,14 @@ jobs:
         run: >
           helm repo add cilium https://helm.cilium.io/ &&
           helm repo update
-          
-      - name: Generate Cilium template
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - name: Checkout git repository
+        uses: actions/checkout@v4
+      - name: Import variables
+        run: |
+          source versions
+          echo ${CILIUM_VERSION}
+      - name: Generate Secure Cilium template
         run: |
           source versions
           echo Executing template generation for Cilium ${CILIUM_VERSION} 
