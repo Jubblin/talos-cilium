@@ -66,6 +66,7 @@ jobs:
           git config user.name ${GITHUB_ACTOR}
           if [[ -z "$(git status --porcelain)" ]]; then echo "No changes to commit"; exit 0; fi
           echo "Changes found. Proceeding with commit and push."
+          git pull
           git add .
           git commit -m "Updating Helm template for Tetragon ${TETRAGON_VERSION}"
           git push
