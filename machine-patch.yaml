@@ -7,6 +7,8 @@
 machine:
   network:
     hostname: "4c4c4544-0037-4710-8054-b2c04f543732"
+  install:
+    wipe: true
 ---
 apiVersion: v1alpha1
 kind: VolumeConfig

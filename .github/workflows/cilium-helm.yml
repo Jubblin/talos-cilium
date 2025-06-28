@@ -64,6 +64,14 @@ jobs:
           --set prometheus.enabled=true \
           --set securityContext.capabilities.ciliumAgent="{CHOWN,KILL,NET_ADMIN,NET_RAW,IPC_LOCK,SYS_ADMIN,SYS_RESOURCE,DAC_OVERRIDE,FOWNER,SETGID,SETUID}" \
           --set securityContext.capabilities.cleanCiliumState="{NET_ADMIN,SYS_ADMIN,SYS_RESOURCE}" \
+          --set l2announcements.enabled=true \
+          --set l2announcements.leaseDuration="3s" \
+          --set l2announcements.leaseRenewDeadline="1s" \
+          --set l2announcements.leaseRetryPeriod="500ms" \
+          --set externalIPs.enabled=true \
+          --set gatewayAPI.enabled=true \
+          --set gatewayAPI.enableAlpn=true \
+          --set gatewayAPI.enableAppProtocol=true \
           > cilium-secure.yaml
 
       - name: Generate Cilium template
@@ -87,6 +95,14 @@ jobs:
           --set prometheus.enabled=true \
           --set securityContext.capabilities.ciliumAgent="{CHOWN,KILL,NET_ADMIN,NET_RAW,IPC_LOCK,SYS_ADMIN,SYS_RESOURCE,DAC_OVERRIDE,FOWNER,SETGID,SETUID}" \
           --set securityContext.capabilities.cleanCiliumState="{NET_ADMIN,SYS_ADMIN,SYS_RESOURCE}" \
+          --set l2announcements.enabled=true \
+          --set l2announcements.leaseDuration="3s" \
+          --set l2announcements.leaseRenewDeadline="1s" \
+          --set l2announcements.leaseRetryPeriod="500ms" \
+          --set externalIPs.enabled=true \
+          --set gatewayAPI.enabled=true \
+          --set gatewayAPI.enableAlpn=true \
+          --set gatewayAPI.enableAppProtocol=true \
           > cilium.yaml
 
       - name: Generate Single Node Cilium template
@@ -111,8 +127,16 @@ jobs:
           --set prometheus.enabled=true \
           --set securityContext.capabilities.ciliumAgent="{CHOWN,KILL,NET_ADMIN,NET_RAW,IPC_LOCK,SYS_ADMIN,SYS_RESOURCE,DAC_OVERRIDE,FOWNER,SETGID,SETUID}" \
           --set securityContext.capabilities.cleanCiliumState="{NET_ADMIN,SYS_ADMIN,SYS_RESOURCE}" \
+          --set l2announcements.enabled=true \
+          --set l2announcements.leaseDuration="3s" \
+          --set l2announcements.leaseRenewDeadline="1s" \
+          --set l2announcements.leaseRetryPeriod="500ms" \
+          --set externalIPs.enabled=true \
+          --set gatewayAPI.enabled=true \
+          --set gatewayAPI.enableAlpn=true \
+          --set gatewayAPI.enableAppProtocol=true \
           > cilium-single-node.yaml
-          
+
       - name: Push changes
         run: |
           EMAIL=$(echo $GITHUB_REPOSITORY | awk -F / '{print $2"@"$1".github.com"}')
