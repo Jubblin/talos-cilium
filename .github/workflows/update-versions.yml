@@ -1,0 +1,98 @@
+name: Update Versions
+
+on:
+  schedule:
+    # Run daily at 00:00 UTC
+    - cron: "0 0 * * *"
+  workflow_dispatch: # Allow manual triggering
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-versions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get latest Cilium version
+        id: cilium
+        run: |
+          LATEST_VERSION=$(curl -s https://api.github.com/repos/cilium/cilium/releases/latest | jq -r '.tag_name' | sed 's/^v//')
+          echo "version=${LATEST_VERSION}" >> $GITHUB_OUTPUT
+          echo "Latest Cilium version: ${LATEST_VERSION}"
+
+      - name: Get latest Tetragon version
+        id: tetragon
+        run: |
+          LATEST_VERSION=$(curl -s https://api.github.com/repos/cilium/tetragon/releases/latest | jq -r '.tag_name' | sed 's/^v//')
+          echo "version=${LATEST_VERSION}" >> $GITHUB_OUTPUT
+          echo "Latest Tetragon version: ${LATEST_VERSION}"
+
+      - name: Get current versions
+        id: current
+        run: |
+          CURRENT_CILIUM=$(grep CILIUM_VERSION versions | cut -d'=' -f2)
+          CURRENT_TETRAGON=$(grep TETRAGON_VERSION versions | cut -d'=' -f2)
+          echo "cilium=${CURRENT_CILIUM}" >> $GITHUB_OUTPUT
+          echo "tetragon=${CURRENT_TETRAGON}" >> $GITHUB_OUTPUT
+          echo "Current Cilium version: ${CURRENT_CILIUM}"
+          echo "Current Tetragon version: ${CURRENT_TETRAGON}"
+
+      - name: Update versions file
+        id: update
+        run: |
+          UPDATED=false
+          CHANGES=""
+
+          # Update Cilium version if different
+          if [ "${{ steps.current.outputs.cilium }}" != "${{ steps.cilium.outputs.version }}" ]; then
+            sed -i "s/CILIUM_VERSION=.*/CILIUM_VERSION=${{ steps.cilium.outputs.version }}/" versions
+            UPDATED=true
+            CHANGES="${CHANGES}- Cilium: ${{ steps.current.outputs.cilium }} → ${{ steps.cilium.outputs.version }}\n"
+          fi
+
+          # Update Tetragon version if different
+          if [ "${{ steps.current.outputs.tetragon }}" != "${{ steps.tetragon.outputs.version }}" ]; then
+            sed -i "s/TETRAGON_VERSION=.*/TETRAGON_VERSION=${{ steps.tetragon.outputs.version }}/" versions
+            UPDATED=true
+            CHANGES="${CHANGES}- Tetragon: ${{ steps.current.outputs.tetragon }} → ${{ steps.tetragon.outputs.version }}\n"
+          fi
+
+          echo "updated=${UPDATED}" >> $GITHUB_OUTPUT
+          echo -e "${CHANGES}" > /tmp/changes.txt
+
+      - name: Create Pull Request
+        if: steps.update.outputs.updated == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: |
+            chore: update versions
+
+            $(cat /tmp/changes.txt)
+          branch: update-versions
+          delete-branch: true
+          title: "chore: update Cilium/Tetragon versions"
+          body: |
+            ## Version Updates
+
+            This PR updates the versions file with the latest releases:
+
+            $(cat /tmp/changes.txt)
+
+            ### Release Notes
+            - [Cilium ${{ steps.cilium.outputs.version }}](https://github.com/cilium/cilium/releases/tag/v${{ steps.cilium.outputs.version }})
+            - [Tetragon ${{ steps.tetragon.outputs.version }}](https://github.com/cilium/tetragon/releases/tag/v${{ steps.tetragon.outputs.version }})
+
+            ---
+            *This PR was automatically created by the [update-versions workflow](.github/workflows/update-versions.yml)*
+          labels: |
+            dependencies
+            automated
+
+      - name: No updates needed
+        if: steps.update.outputs.updated == 'false'
+        run: echo "All versions are up to date!"
