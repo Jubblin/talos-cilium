@@ -7,6 +7,12 @@
 machine:
   network:
     hostname: "4c4c4544-0037-4710-8054-b2c04f543732"
+    interfaces:
+      - interface: eno1
+        dhcp: false
+        vlans:
+          - vlanId: 250
+            dhcp: true
   install:
     wipe: true
 ---
