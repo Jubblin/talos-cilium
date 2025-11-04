@@ -19,7 +19,7 @@ permissions:
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # This workflow contains a single job called "build"
+  # This workflow contains a single job called "tetragon"
   tetragon:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
@@ -41,24 +41,34 @@ jobs:
         run: >
           helm repo add cilium https://helm.cilium.io/ &&
           helm repo update
-          
+
       - name: Generate Tetragon template
         run: |
           source versions
           echo Executing template generation for Tetragon ${TETRAGON_VERSION}
+          mkdir -p templates/tetragon/${TETRAGON_VERSION}
           helm template tetragon cilium/tetragon -n kube-system  --version ${TETRAGON_VERSION} \
           --namespace kube-system \
-          > tetragon.yaml
-          
+          > templates/tetragon/${TETRAGON_VERSION}/tetragon.yaml
+
       - name: Generate Single Node Tetragon template
         run: |
           source versions
           echo Executing template generation for Tetragon ${TETRAGON_VERSION}
+          mkdir -p templates/tetragon/${TETRAGON_VERSION}
           helm template tetragon cilium/tetragon -n kube-system  --version ${TETRAGON_VERSION} \
           --set operator.replicas=1 \
           --namespace kube-system \
-          > tetragon-single-node.yaml
-          
+          > templates/tetragon/${TETRAGON_VERSION}/tetragon-single-node.yaml
+
+      - name: Update latest symlink
+        run: |
+          source versions
+          echo "Creating 'latest' symlink for Tetragon ${TETRAGON_VERSION}"
+          cd templates/tetragon
+          rm -f latest
+          ln -s ${TETRAGON_VERSION} latest
+
       - name: Push changes
         run: |
           EMAIL=$(echo $GITHUB_REPOSITORY | awk -F / '{print $2"@"$1".github.com"}')
@@ -68,5 +78,5 @@ jobs:
           echo "Changes found. Proceeding with commit and push."
           git pull
           git add .
-          git commit -m "Updating Helm template for Tetragon ${TETRAGON_VERSION}"
+          git commit -m "Updating Helm templates for Tetragon ${TETRAGON_VERSION} in templates/tetragon/${TETRAGON_VERSION}/"
           git push

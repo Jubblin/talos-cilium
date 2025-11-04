@@ -19,7 +19,7 @@ permissions:
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # This workflow contains a single job called "build"
+  # This workflow contains a single job called "cilium"
   cilium:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
@@ -41,34 +41,46 @@ jobs:
         run: |
           source versions
           echo ${CILIUM_VERSION}
+
       - name: Generate Secure Cilium template
         run: |
           source versions
-          echo Executing template generation for Cilium ${CILIUM_VERSION} 
+          echo Executing template generation for Cilium ${CILIUM_VERSION}
+          mkdir -p templates/cilium/${CILIUM_VERSION}
           helm template cilium cilium/cilium --version ${CILIUM_VERSION} \
           --namespace kube-system \
           $CILIUM_VALUES \
-          > cilium-secure.yaml
+          > templates/cilium/${CILIUM_VERSION}/cilium-secure.yaml
 
       - name: Generate Cilium template
         run: |
           source versions
-          echo Executing template generation for Cilium ${CILIUM_VERSION} 
+          echo Executing template generation for Cilium ${CILIUM_VERSION}
+          mkdir -p templates/cilium/${CILIUM_VERSION}
           helm template cilium cilium/cilium --version ${CILIUM_VERSION} \
           --namespace kube-system \
           $CILIUM_VALUES \
           $CILIUM_ENCRYPT \
-          > cilium.yaml
+          > templates/cilium/${CILIUM_VERSION}/cilium.yaml
 
       - name: Generate Single Node Cilium template
         run: |
           source versions
-          echo Executing template generation for Cilium ${CILIUM_VERSION} 
+          echo Executing template generation for Cilium ${CILIUM_VERSION}
+          mkdir -p templates/cilium/${CILIUM_VERSION}
           helm template cilium cilium/cilium --version ${CILIUM_VERSION} \
           --namespace kube-system \
           $CILIUM_VALUES \
           $CILIUM_SINGLE_OPERATOR \
-          > cilium-single-node.yaml
+          > templates/cilium/${CILIUM_VERSION}/cilium-single-node.yaml
+
+      - name: Update latest symlink
+        run: |
+          source versions
+          echo "Creating 'latest' symlink for Cilium ${CILIUM_VERSION}"
+          cd templates/cilium
+          rm -f latest
+          ln -s ${CILIUM_VERSION} latest
 
       - name: Push changes
         run: |
@@ -79,5 +91,5 @@ jobs:
           echo "Changes found. Proceeding with commit and push."
           git pull
           git add .
-          git commit -m "Updating Helm template for Cilium ${CILIUM_VERSION}"
+          git commit -m "Updating Helm templates for Cilium ${CILIUM_VERSION} in templates/cilium/${CILIUM_VERSION}/"
           git push

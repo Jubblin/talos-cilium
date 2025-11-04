@@ -3,12 +3,12 @@ cluster:
     cni:
       name: custom
       urls:
-        - https://raw.githubusercontent.com/Jubblin/talos-cilium/main/cilium.yaml
+        - https://raw.githubusercontent.com/Jubblin/talos-cilium/main/templates/cilium/latest/cilium.yaml
   proxy:
     disabled: true
   extraManifests:
     - https://raw.githubusercontent.com/alex1989hu/kubelet-serving-cert-approver/main/deploy/standalone-install.yaml
     - https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
     - https://raw.githubusercontent.com/cilium/cilium/refs/heads/main/examples/kubernetes/addons/prometheus/monitoring-example.yaml
-    - https://raw.githubusercontent.com/Jubblin/talos-cilium/main/tetragon.yaml
+    - https://raw.githubusercontent.com/Jubblin/talos-cilium/main/templates/tetragon/latest/tetragon.yaml
     - https://github.com/controlplaneio-fluxcd/flux-operator/releases/latest/download/install.yaml

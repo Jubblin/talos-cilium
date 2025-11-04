@@ -4,9 +4,9 @@ cluster:
     cni:
       name: custom
       urls:
-        - https://raw.githubusercontent.com/Jubblin/talos-cilium/main/cilium-single-node.yaml
+        - https://raw.githubusercontent.com/Jubblin/talos-cilium/main/templates/cilium/latest/cilium-single-node.yaml
   proxy:
     disabled: true
   extraManifests:
-    - https://raw.githubusercontent.com/Jubblin/talos-cilium/main/tetragon-single-node.yaml
+    - https://raw.githubusercontent.com/Jubblin/talos-cilium/main/templates/tetragon/latest/tetragon-single-node.yaml
     - https://github.com/controlplaneio-fluxcd/flux-operator/releases/latest/download/install.yaml

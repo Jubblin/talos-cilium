@@ -1,0 +1,4 @@
+# Don't ignore any files in this directory
+# (Override parent .gitignore if it exists)
+!*
+
