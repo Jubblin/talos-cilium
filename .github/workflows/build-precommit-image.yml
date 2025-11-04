@@ -112,7 +112,7 @@ jobs:
         if: github.event_name != 'pull_request' && success()
 
       - name: Upload SBOM as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: sbom-precommit
           path: sbom-precommit.spdx.json
