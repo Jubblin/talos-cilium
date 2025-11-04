@@ -1,8 +1,11 @@
-.PHONY: help install-hooks pre-commit pre-commit-all lint-markdown clean
+.PHONY: help build-precommit-image install-hooks pre-commit pre-commit-all lint-markdown clean
 
 help: ## Show this help message
 	@echo "Available targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+build-precommit-image: ## Build the pre-commit Docker image
+	@./.githooks/build-precommit-image.sh
 
 install-hooks: ## Install git hooks for pre-commit
 	@./.githooks/install.sh
@@ -26,4 +29,3 @@ clean: ## Clean up temporary files
 	@find . -name "*.pyc" -delete
 	@find . -name "__pycache__" -delete
 	@echo "✓ Cleaned up temporary files"
-

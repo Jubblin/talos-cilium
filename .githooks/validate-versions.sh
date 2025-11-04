@@ -26,4 +26,3 @@ fi
 
 echo "✓ versions file is valid"
 exit 0
-

@@ -31,25 +31,25 @@ kind: UserVolumeConfig
 name: ceph-data # Name of the volume.
 # The provisioning describes how the volume is provisioned.
 provisioning:
-    # The disk selector expression.
-    diskSelector:
-        match: disk.transport == "sata" # The Common Expression Language (CEL) expression to match the disk.
-    minSize: 2.5GiB
-    grow: true
+  # The disk selector expression.
+  diskSelector:
+    match: disk.transport == "sata" # The Common Expression Language (CEL) expression to match the disk.
+  minSize: 2.5GiB
+  grow: true
 # The filesystem describes how the volume is formatted.
 filesystem:
-    type: xfs # Filesystem type. Default is `xfs`.
+  type: xfs # Filesystem type. Default is `xfs`.
 ---
 apiVersion: v1alpha1
 kind: UserVolumeConfig
 name: nvme-data # Name of the volume.
 # The provisioning describes how the volume is provisioned.
 provisioning:
-    # The disk selector expression.
-    diskSelector:
-        match: disk.transport == "nvme" # The Common Expression Language (CEL) expression to match the disk.
-    minSize: 2.5GiB
-    grow: true
+  # The disk selector expression.
+  diskSelector:
+    match: disk.transport == "nvme" # The Common Expression Language (CEL) expression to match the disk.
+  minSize: 2.5GiB
+  grow: true
 # The filesystem describes how the volume is formatted.
 filesystem:
-    type: xfs # Filesystem type. Default is `xfs`.
+  type: xfs # Filesystem type. Default is `xfs`.

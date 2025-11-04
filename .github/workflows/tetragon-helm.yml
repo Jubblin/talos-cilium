@@ -20,6 +20,7 @@ permissions:
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   # This workflow contains a single job called "tetragon"
+  # This workflow contains a single job called "tetragon"
   tetragon:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
@@ -32,7 +33,7 @@ jobs:
       - name: Import variables
         run: |
           source versions
-          echo ${CILIUM_VERSION}
+          echo ${TETRAGON_VERSION}
       - name: Install Helm cli
         run: >
           curl -sSL https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash &&

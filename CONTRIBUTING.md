@@ -16,7 +16,17 @@ git clone https://github.com/yourusername/talos-cilium.git
 cd talos-cilium
 ```
 
-### 2. Install pre-commit hooks
+### 2. Build the pre-commit Docker image
+
+First time only, build the custom Docker image with all linting tools:
+
+```bash
+make build-precommit-image
+# or
+./.githooks/build-precommit-image.sh
+```
+
+### 3. Install pre-commit hooks
 
 Run the installation script to set up containerized git hooks:
 
@@ -28,7 +38,7 @@ make install-hooks
 
 This will automatically run quality checks before each commit.
 
-### 3. Make your changes
+### 4. Make your changes
 
 Edit the files as needed. The following will be checked automatically:
 
@@ -132,7 +142,7 @@ TETRAGON_VERSION=1.4.1
 
 ```bash
 # If you've made changes to YAML files, you can manually validate them
-docker run --rm -v "$(pwd):/src" -w /src mkenney/pre-commit:latest run check-yaml --all-files
+docker run --rm -v "$(pwd):/src" -w /src talos-cilium/pre-commit:latest run check-yaml --all-files
 ```
 
 ## Troubleshooting
@@ -146,7 +156,7 @@ If you see Docker-related errors:
 3. Try pulling the pre-commit image manually:
 
    ```bash
-   docker pull mkenney/pre-commit:latest
+   make build-precommit-image
    ```
 
 ### Hook not running

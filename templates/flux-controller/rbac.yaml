@@ -15,9 +15,9 @@ metadata:
   name: fluxcd-role
   namespace: flux-system
 rules:
-- apiGroups: [""]
-  resources: ["deployments", "services", "configmaps", "secrets", "serviceaccounts"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["deployments", "services", "configmaps", "secrets", "serviceaccounts"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -25,9 +25,9 @@ metadata:
   name: fluxcd-role-binding
   namespace: flux-system
 subjects:
-- kind: ServiceAccount
-  name: fluxcd
-  namespace: flux-system
+  - kind: ServiceAccount
+    name: fluxcd
+    namespace: flux-system
 roleRef:
   kind: Role
   name: fluxcd-role
@@ -39,9 +39,9 @@ metadata:
   name: fluxcd-role-binding
   namespace: flux-system
 subjects:
-- kind: ServiceAccount
-  name: default
-  namespace: flux-system
+  - kind: ServiceAccount
+    name: default
+    namespace: flux-system
 roleRef:
   kind: Role
   name: fluxcd-role
