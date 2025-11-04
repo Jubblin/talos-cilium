@@ -71,7 +71,7 @@ jobs:
         uses: aquasecurity/setup-trivy@v0.2.0
         with:
           cache: true
-          version: 0.67.2
+          version: v0.67.2
 
       - name: Run Trivy vulnerability scanner (SARIF)
         id: trivy-scan
