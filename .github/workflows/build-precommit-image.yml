@@ -118,7 +118,6 @@ jobs:
         uses: anchore/sbom-action@v0
         with:
           image: ${{ steps.meta.outputs.tags[1] }}
-          # image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           artifact-name: sbom-precommit.spdx
           output-file: sbom-precommit.spdx.json
         if: github.event_name != 'pull_request' && success()
@@ -130,9 +129,35 @@ jobs:
           path: sbom-precommit.spdx.json
         if: github.event_name != 'pull_request' && success()
 
-      - name: Sign container image with cosign
-        if: github.event_name != 'pull_request' && success()
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.0.0
+        with:
+          cosign-release: "v3.0.2"
+
+      - name: Check install!
+        run: cosign version
+
+      # https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-an-intermediate-environment-variable
+      - name: Sign image with a cosign
         run: |
-          cosign sign --yes ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-push.outputs.digest }}
+          images=""
+          for tag in ${TAGS}; do
+            images+="${tag} "
+          done
+          cosign sign --yes ${images}
         env:
-          COSIGN_EXPERIMENTAL: "true"
+          TAGS: ${{ steps.meta.outputs.tags }}
+          # COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          # COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          # DIGEST: ${{ steps.build-push.outputs.digest }}
+
+      - name: Sign the images with GitHub OIDC Token
+        env:
+          DIGEST: ${{ steps.build-push.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          images=""
+          for tag in ${TAGS}; do
+            images+="${tag}@${DIGEST} "
+          done
+          cosign sign --yes ${images}
