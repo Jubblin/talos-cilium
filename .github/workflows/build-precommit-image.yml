@@ -117,7 +117,7 @@ jobs:
       - name: Generate SBOM
         uses: anchore/sbom-action@v0
         with:
-          image: ${{ steps.meta.outputs.tags }}
+          image: ${{ steps.meta.outputs.tags[1] }}
           # image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           artifact-name: sbom-precommit.spdx
           output-file: sbom-precommit.spdx.json
