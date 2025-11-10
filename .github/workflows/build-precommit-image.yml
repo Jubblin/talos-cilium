@@ -55,7 +55,7 @@ jobs:
 
       - name: Build Docker image locally
         id: build-local
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile.precommit
@@ -104,7 +104,7 @@ jobs:
       - name: Build and push multi-arch Docker image
         id: build-push
         if: github.event_name != 'pull_request' && success()
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile.precommit
