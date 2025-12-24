@@ -50,6 +50,7 @@ jobs:
           helm template cilium cilium/cilium --version ${CILIUM_VERSION} \
           --namespace kube-system \
           $CILIUM_VALUES \
+          $CILIUM_ENCRYPT \
           > templates/cilium/${CILIUM_VERSION}/cilium-secure.yaml
 
       - name: Generate Cilium template
@@ -60,7 +61,6 @@ jobs:
           helm template cilium cilium/cilium --version ${CILIUM_VERSION} \
           --namespace kube-system \
           $CILIUM_VALUES \
-          $CILIUM_ENCRYPT \
           > templates/cilium/${CILIUM_VERSION}/cilium.yaml
 
       - name: Generate Single Node Cilium template
