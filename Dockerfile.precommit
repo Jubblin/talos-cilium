@@ -1,7 +1,7 @@
 # Dockerfile for pre-commit container
 # This container includes all tools needed to run pre-commit hooks
 
-FROM ghcr.io/google/yamlfmt:0.20 AS yamlfmt
+FROM ghcr.io/google/yamlfmt:0.21 AS yamlfmt
 
 FROM python:3.14-slim
 
