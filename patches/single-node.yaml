@@ -4,7 +4,7 @@ cluster:
     cni:
       name: custom
       urls:
-        - https://raw.githubusercontent.com/Jubblin/talos-cilium/main/templates/cilium/latest/cilium-single-node.yaml
+        - https://raw.githubusercontent.com/Jubblin/talos-cilium/main/templates/cilium/1.18.5/cilium-single-node.yaml
   proxy:
     disabled: true
   extraManifests:

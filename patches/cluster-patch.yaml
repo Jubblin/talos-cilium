@@ -3,7 +3,7 @@ cluster:
     cni:
       name: custom
       urls:
-        - https://raw.githubusercontent.com/Jubblin/talos-cilium/main/templates/cilium/latest/cilium.yaml
+        - https://raw.githubusercontent.com/Jubblin/talos-cilium/main/templates/cilium/1.18.5/cilium.yaml
   proxy:
     disabled: true
   extraManifests:
