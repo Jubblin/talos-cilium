@@ -79,8 +79,9 @@ jobs:
           source versions
           echo "Creating 'latest' symlink for Cilium ${CILIUM_VERSION}"
           cd templates/cilium
-          rm -f latest
-          ln -s ${CILIUM_VERSION} latest
+          rm -rf latest
+          mkdir -p latest
+          cp ${CILIUM_VERSION}/* latest/
 
       - name: Push changes
         run: |
