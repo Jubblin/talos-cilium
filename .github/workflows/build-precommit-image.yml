@@ -130,7 +130,7 @@ jobs:
         if: github.event_name != 'pull_request' && success()
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v4.0.0
+        uses: sigstore/cosign-installer@v4.1.1
         with:
           cosign-release: "v3.0.2"
 
