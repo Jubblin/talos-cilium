@@ -1,0 +1,8 @@
+# kubectl apply -k flux-operator/
+namespace: flux-system
+resources:
+  - jobs/job.yaml
+configMapGenerator:
+  - name: flux-operator-values
+    files:
+      - values.yaml
