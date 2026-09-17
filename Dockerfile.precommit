@@ -1,9 +1,9 @@
 # Dockerfile for pre-commit container
 # This container includes all tools needed to run pre-commit hooks
 
-FROM ghcr.io/google/yamlfmt:0.21 AS yamlfmt
+FROM ghcr.io/google/yamlfmt:0.21@sha256:015f4f1e818b38cb72bec2d4baa5d312d3a5f40c6c22ff3fef35a5415095b7f2 AS yamlfmt
 
-FROM python:3.14-slim
+FROM python:3.14-slim@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6
 
 # Set labels
 LABEL maintainer="Jubblin"
