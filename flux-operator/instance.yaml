@@ -1,0 +1,28 @@
+# Applied automatically by jobs/instance-apply-job.yaml, which polls for the
+# FluxInstance CRD (installed by jobs/job.yaml's Helm chart) before applying
+# this. Manual re-trigger: kubectl apply -f flux-operator/instance.yaml (once
+# the CRD and the flux-system/git secret both exist).
+apiVersion: fluxcd.controlplane.io/v1
+kind: FluxInstance
+metadata:
+  name: flux
+  namespace: flux-system
+spec:
+  distribution:
+    version: "2.x"
+    registry: "ghcr.io/fluxcd"
+  components:
+    - source-controller
+    - kustomize-controller
+    - helm-controller
+    - notification-controller
+  cluster:
+    type: kubernetes
+    multitenant: false
+    networkPolicy: true
+  sync:
+    kind: GitRepository
+    url: "https://github.com/Jubblin/stormcraft.git"
+    ref: "refs/heads/main"
+    path: "clusters/stormcraft"
+    pullSecret: "git"

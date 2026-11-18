@@ -50,6 +50,8 @@ jobs:
           # Update Cilium version if different
           if [ "${{ steps.current.outputs.cilium }}" != "${{ steps.cilium.outputs.version }}" ]; then
             sed -i "s/CILIUM_VERSION=.*/CILIUM_VERSION=${{ steps.cilium.outputs.version }}/" versions
+            sed -i -E "s/--version [0-9][0-9.]*/--version ${{ steps.cilium.outputs.version }}/" cilium/jobs/job.yaml
+            sed -i -E "s/--version [0-9][0-9.]*( \\\\)/--version ${{ steps.cilium.outputs.version }}\1/" patches/pinode.yaml
             UPDATED=true
             CHANGES="${CHANGES}- Cilium: ${{ steps.current.outputs.cilium }} → ${{ steps.cilium.outputs.version }}\n"
           fi
@@ -62,7 +64,11 @@ jobs:
           fi
 
           echo "updated=${UPDATED}" >> $GITHUB_OUTPUT
-          echo -e "${CHANGES}" > /tmp/changes.txt
+          {
+            echo "changes<<EOF"
+            echo -e "${CHANGES}"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
 
       - name: Create Pull Request
         if: steps.update.outputs.updated == 'true'
@@ -72,7 +78,7 @@ jobs:
           commit-message: |
             chore: update versions
 
-            $(cat /tmp/changes.txt)
+            ${{ steps.update.outputs.changes }}
           branch: update-versions
           delete-branch: true
           title: "chore: update Cilium/Tetragon versions"
@@ -81,7 +87,7 @@ jobs:
 
             This PR updates the versions file with the latest releases:
 
-            $(cat /tmp/changes.txt)
+            ${{ steps.update.outputs.changes }}
 
             ### Release Notes
             - [Cilium ${{ steps.cilium.outputs.version }}](https://github.com/cilium/cilium/releases/tag/v${{ steps.cilium.outputs.version }})

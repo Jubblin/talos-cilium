@@ -1,0 +1,33 @@
+# Waits for the FluxInstance CRD, then applies instance.yaml.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fluxinstance-apply
+spec:
+  activeDeadlineSeconds: 1800
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 1800
+  template:
+    spec:
+      serviceAccountName: fluxinstance-apply
+      restartPolicy: Never
+      containers:
+        - name: apply
+          image: alpine/k8s:1.36.6
+          command: ["/bin/sh", "/scripts/retry-until.sh"]
+          args:
+            - kubectl get crd fluxinstances.fluxcd.controlplane.io >/dev/null 2>&1
+            - kubectl apply -f /manifest/instance.yaml
+          volumeMounts:
+            - name: retry-until-script
+              mountPath: /scripts
+            - name: fluxinstance-manifest
+              mountPath: /manifest
+      volumes:
+        - name: retry-until-script
+          configMap:
+            name: retry-until-script
+            defaultMode: 0555
+        - name: fluxinstance-manifest
+          configMap:
+            name: fluxinstance-manifest

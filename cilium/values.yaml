@@ -1,8 +1,8 @@
-# helm install cilium cilium/cilium --version 1.18.0 --namespace kube-system -f cilium/values.yaml
+# helm install cilium cilium/cilium --version 1.20.5 --namespace kube-system -f cilium/values.yaml
 #
 # Talos requirements for a CNI running as the sole network provider with
-# kube-proxy replaced (see talos/patches/cni-kubeproxy.yaml, which must be
-# applied before this chart is installed):
+# kube-proxy replaced (cluster.proxy.disabled must be
+# set in the Talos config before this chart is installed):
 #   - k8sServiceHost/k8sServicePort point at KubePrism (127.0.0.1:7445),
 #     which every Talos node exposes locally so Cilium can reach the API
 #     server without an external load balancer.

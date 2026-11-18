@@ -4,7 +4,7 @@
 # restrictor won't read a file from outside the kustomization root, and
 # this generates the cilium-values ConfigMap straight from values.yaml so
 # there's one source of truth for the Helm values (the same file
-# talos/README.md's manual `helm install` fallback uses).
+# the README's manual `helm install` fallback uses).
 namespace: kube-system
 resources:
   - jobs/serviceaccount.yaml

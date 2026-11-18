@@ -29,3 +29,9 @@ clean: ## Clean up temporary files
 	@find . -name "*.pyc" -delete
 	@find . -name "__pycache__" -delete
 	@echo "✓ Cleaned up temporary files"
+
+# Re-render the inline manifests in patches/pinode.yaml from the kustomize bundles
+.PHONY: render-pinode
+render-pinode:
+	CILIUM="$$(kubectl kustomize cilium)" FLUX="$$(kubectl kustomize flux-operator)" \
+	yq -i '.cluster.inlineManifests[0].contents = strenv(CILIUM) | .cluster.inlineManifests[1].contents = strenv(FLUX)' patches/pinode.yaml

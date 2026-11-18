@@ -1,8 +1,20 @@
 # kubectl apply -k flux-operator/
 namespace: flux-system
 resources:
+  - rbac.yaml
   - jobs/job.yaml
+  - jobs/instance-apply-job.yaml
+  - jobs/secret-decrypt-job.yaml
 configMapGenerator:
   - name: flux-operator-values
     files:
       - values.yaml
+  - name: fluxinstance-manifest
+    files:
+      - instance.yaml
+  - name: git-secret-encrypted
+    files:
+      - git-secret.enc.yaml
+  - name: retry-until-script
+    files:
+      - retry-until.sh

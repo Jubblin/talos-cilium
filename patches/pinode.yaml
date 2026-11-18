@@ -7,7 +7,7 @@ cluster:
     disabled: true
   inlineManifests:
     - name: cilium-bootstrap
-      contents: |
+      contents: |-
         apiVersion: v1
         kind: ServiceAccount
         metadata:
@@ -19,7 +19,7 @@ cluster:
         metadata:
           name: cilium-installer
         roleRef:
-          apiGroup: rbac.authorization.k8s.
+          apiGroup: rbac.authorization.k8s.io
           kind: ClusterRole
           name: cluster-admin
         subjects:
@@ -30,11 +30,11 @@ cluster:
         apiVersion: v1
         data:
           values.yaml: |
-            # helm install cilium cilium/cilium --version 1.18.0 --namespace kube-system -f cilium/values.yaml
+            # helm install cilium cilium/cilium --version 1.20.5 --namespace kube-system -f cilium/values.yaml
             #
             # Talos requirements for a CNI running as the sole network provider with
-            # kube-proxy replaced (see talos/patches/cni-kubeproxy.yaml, which must be
-            # applied before this chart is installed):
+            # kube-proxy replaced (cluster.proxy.disabled must be
+            # set in the Talos config before this chart is installed):
             #   - k8sServiceHost/k8sServicePort point at KubePrism (127.0.0.1:7445),
             #     which every Talos node exposes locally so Cilium can reach the API
             #     server without an external load balancer.
@@ -42,8 +42,6 @@ cluster:
             #     cgroupv2 hierarchy at /sys/fs/cgroup.
             #   - Talos does not allow workloads to load kernel modules, so SYS_MODULE
             #     is dropped from Cilium's default capability set.
-            operator:
-              replicas: 1
             ipam:
               mode: kubernetes
 
@@ -77,7 +75,7 @@ cluster:
                   - SYS_RESOURCE
         kind: ConfigMap
         metadata:
-          name: cilium-values-hf922bb52h
+          name: cilium-values-8tb46bk6d6
           namespace: kube-system
         ---
         apiVersion: batch/v1
@@ -86,6 +84,7 @@ cluster:
           name: cilium-install
           namespace: kube-system
         spec:
+          activeDeadlineSeconds: 2400
           backoffLimit: 3
           template:
             spec:
@@ -96,7 +95,7 @@ cluster:
                   helm repo add cilium https://helm.cilium.io/
                   helm repo update
                   helm upgrade --install cilium cilium/cilium \
-                    --version 1.18.0 \
+                    --version 1.20.5 \
                     --namespace kube-system \
                     -f /values/values.yaml \
                     --wait --timeout 10m
@@ -106,11 +105,12 @@ cluster:
                 env:
                 - name: KUBECONFIG
                   value: /etc/kubeconfig/kubeconfig
-                image: alpine/k8s:1.32.13
+                image: alpine/k8s:1.36.6
                 name: cilium-install
                 volumeMounts:
                 - mountPath: /values
                   name: values
+                  readOnly: true
                 - mountPath: /etc/kubeconfig
                   name: kubeconfig-in-cluster
                   readOnly: true
@@ -121,19 +121,40 @@ cluster:
                 - |
                   set -eu
 
-                  echo "Checking API server is reachable..."
-                  kubectl get --raw=/healthz
-
-                  echo "Checking control-plane node count..."
-                  cp_count=$(kubectl get nodes -l node-role.kubernetes.io/control-plane -o name | wc -l)
-                  if [ "$cp_count" -ne "$EXPECTED_CONTROL_PLANE_COUNT" ]; then
-                    echo "Expected $EXPECTED_CONTROL_PLANE_COUNT control-plane nodes, found $cp_count" >&2
-                    exit 1
-                  fi
+                  # Wait (max 15 min) for the API, at least one control-plane node,
+                  # and a control-plane count unchanged for 60 s, so a staggered
+                  # join settles before Helm runs. The count is not validated
+                  # against an expected size; check node count in Omni.
+                  deadline=$(( $(date +%s) + 900 ))
+                  last=-1
+                  stable_since=$(date +%s)
+                  while :; do
+                    now=$(date +%s)
+                    if [ "$now" -ge "$deadline" ]; then
+                      echo "Timed out waiting for a stable control-plane node count (last seen: $last)" >&2
+                      exit 1
+                    fi
+                    if kubectl get --raw=/healthz >/dev/null 2>&1; then
+                      cp_count=$(kubectl get nodes -l node-role.kubernetes.io/control-plane -o name 2>/dev/null | wc -l)
+                      if [ "$cp_count" -ne "$last" ]; then
+                        last=$cp_count
+                        stable_since=$now
+                      fi
+                      echo "API healthy; control-plane nodes: $cp_count (unchanged for $((now - stable_since))s)"
+                      if [ "$cp_count" -ge 1 ] && [ $((now - stable_since)) -ge 60 ]; then
+                        break
+                      fi
+                    else
+                      echo "API server not reachable yet..."
+                      last=-1
+                    fi
+                    sleep 10
+                  done
+                  echo "Proceeding with $last control-plane node(s)."
 
                   echo "Checking kube-proxy is disabled..."
                   if kubectl -n kube-system get daemonset kube-proxy >/dev/null 2>&1; then
-                    echo "kube-proxy DaemonSet is still present — talos/patches/cni-kubeproxy.yaml (cluster.proxy.disabled) was not applied to this cluster" >&2
+                    echo "kube-proxy DaemonSet is still present — cluster.proxy.disabled was not applied to this cluster" >&2
                     exit 1
                   fi
 
@@ -153,9 +174,7 @@ cluster:
                 env:
                 - name: KUBECONFIG
                   value: /etc/kubeconfig/kubeconfig
-                - name: EXPECTED_CONTROL_PLANE_COUNT
-                  value: "3"
-                image: alpine/k8s:1.32.13
+                image: alpine/k8s:1.36.6
                 name: preflight
                 volumeMounts:
                 - mountPath: /etc/kubeconfig
@@ -180,14 +199,14 @@ cluster:
                 operator: Exists
               volumes:
               - configMap:
-                  name: cilium-values-hf922bb52h
+                  name: cilium-values-8tb46bk6d6
                 name: values
               - configMap:
                   name: kubeconfig-in-cluster
                 name: kubeconfig-in-cluster
           ttlSecondsAfterFinished: 1800
     - name: flux-operator-bootstrap
-      contents: |
+      contents: |-
         apiVersion: v1
         kind: Namespace
         metadata:
@@ -312,12 +331,19 @@ cluster:
         ---
         apiVersion: v1
         data:
+          values.yaml: ""
+        kind: ConfigMap
+        metadata:
+          name: flux-operator-values-bd478ft2hd
+          namespace: flux-system
+        ---
+        apiVersion: v1
+        data:
           instance.yaml: |
-            # Applied automatically by flux-operator/instance-apply-job.yaml, which
-            # polls for the FluxInstance CRD (installed by job.yaml's Helm chart)
-            # before applying this. Manual re-trigger/debug: kubectl apply -f
-            # flux-operator/instance.yaml (once the CRD and the flux-system/git
-            # secret both exist).
+            # Applied automatically by jobs/instance-apply-job.yaml, which polls for the
+            # FluxInstance CRD (installed by jobs/job.yaml's Helm chart) before applying
+            # this. Manual re-trigger: kubectl apply -f flux-operator/instance.yaml (once
+            # the CRD and the flux-system/git secret both exist).
             apiVersion: fluxcd.controlplane.io/v1
             kind: FluxInstance
             metadata:
@@ -344,32 +370,19 @@ cluster:
                 pullSecret: "git"
         kind: ConfigMap
         metadata:
-          name: fluxinstance-manifest-bk52h9mkg9
+          name: fluxinstance-manifest-mg4h862fh9
           namespace: flux-system
         ---
         apiVersion: v1
         data:
           git-secret.enc.yaml: |
-            # PLACEHOLDER — not real ciphertext. Replace before this design works.
-            #
-            # Generate your age keypair and encrypt the real secret:
-            #   container run --rm alpine:3.20 sh -c 'apk add --no-cache age >/dev/null && age-keygen' > age.agekey
-            #   # copy the "public key:" line into .sops.yaml, then:
-            #   cat <<'SECRET' > /tmp/git-secret.yaml
-            #   apiVersion: v1
-            #   kind: Secret
-            #   metadata:
-            #     name: git
-            #   type: Opaque
-            #   stringData:
-            #     username: git
-            #     password: <your GitHub PAT>
-            #   SECRET
-            #   container run --rm -v "$PWD:/work" -v /tmp/git-secret.yaml:/tmp/git-secret.yaml \
-            #     -w /work alpine:3.20 sh -c \
-            #     'apk add --no-cache sops >/dev/null && sops -e /tmp/git-secret.yaml' \
-            #     > flux-operator/git-secret.enc.yaml
-            #   rm /tmp/git-secret.yaml age.agekey  # move age.agekey to your password manager first
+            # PLACEHOLDER — not real ciphertext. The decrypt Job fails until the owner
+            # replaces this file with the output of `sops -e` (age recipient only; the
+            # private key and PAT are never committed):
+            #   age-keygen -o age.agekey                      # keep age.agekey out of git
+            #   kubectl -n flux-system create secret generic sops-age --from-file=age.agekey
+            #   # put the secret below in git-secret.yaml with a real PAT, then:
+            #   sops -e --age <public key from age-keygen> git-secret.yaml > flux-operator/git-secret.enc.yaml
             apiVersion: v1
             kind: Secret
             metadata:
@@ -380,14 +393,14 @@ cluster:
               password: REPLACE_ME
         kind: ConfigMap
         metadata:
-          name: git-secret-encrypted-gf267kc7gm
+          name: git-secret-encrypted-28ft5cbhdk
           namespace: flux-system
         ---
         apiVersion: v1
         data:
           retry-until.sh: |
             #!/bin/sh
-            # Shared by both bootstrap Jobs (secret-decrypt-job.yaml, instance-apply-job.yaml).
+            # Shared by both bootstrap Jobs (instance-apply-job.yaml, secret-decrypt-job.yaml).
             # Polls a check command until it succeeds, then runs an action command once.
             # Bounded by activeDeadlineSeconds on the Job itself, not by this script —
             # Kubernetes kills the pod (Job goes Failed) if the deadline passes while
@@ -405,7 +418,7 @@ cluster:
             eval "$ACTION"
         kind: ConfigMap
         metadata:
-          name: retry-until-script-k29726k56b
+          name: retry-until-script-m6mh869k75
           namespace: flux-system
         ---
         apiVersion: batch/v1
@@ -424,14 +437,23 @@ cluster:
                   helm upgrade --install flux-operator \
                     oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator \
                     --namespace flux-system \
+                    -f /values/values.yaml \
                     --wait --timeout 10m
                 command:
                 - /bin/sh
                 - -c
-                image: alpine/k8s:1.32.13
+                image: alpine/k8s:1.36.6
                 name: install
+                volumeMounts:
+                - mountPath: /values
+                  name: values
+                  readOnly: true
               restartPolicy: Never
               serviceAccountName: flux-operator-installer
+              volumes:
+              - configMap:
+                  name: flux-operator-values-bd478ft2hd
+                name: values
           ttlSecondsAfterFinished: 1800
         ---
         apiVersion: batch/v1
@@ -451,7 +473,7 @@ cluster:
                 command:
                 - /bin/sh
                 - /scripts/retry-until.sh
-                image: alpine/k8s:1.32.13
+                image: alpine/k8s:1.36.6
                 name: apply
                 volumeMounts:
                 - mountPath: /scripts
@@ -463,10 +485,10 @@ cluster:
               volumes:
               - configMap:
                   defaultMode: 365
-                  name: retry-until-script-k29726k56b
+                  name: retry-until-script-m6mh869k75
                 name: retry-until-script
               - configMap:
-                  name: fluxinstance-manifest-bk52h9mkg9
+                  name: fluxinstance-manifest-mg4h862fh9
                 name: fluxinstance-manifest
           ttlSecondsAfterFinished: 1800
         ---
@@ -490,7 +512,7 @@ cluster:
                 command:
                 - /bin/sh
                 - -c
-                image: alpine/k8s:1.32.13
+                image: alpine/k8s:1.36.6
                 name: decrypt
                 volumeMounts:
                 - mountPath: /encrypted
@@ -502,7 +524,7 @@ cluster:
               serviceAccountName: sops-decrypt
               volumes:
               - configMap:
-                  name: git-secret-encrypted-gf267kc7gm
+                  name: git-secret-encrypted-28ft5cbhdk
                 name: git-secret-encrypted
               - name: sops-age
                 secret:

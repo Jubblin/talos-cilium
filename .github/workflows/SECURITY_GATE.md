@@ -10,7 +10,7 @@ graph TD
     A[Code Push/PR] --> B[Build Local Image]
     B --> C[Trivy Security Scan]
     C --> D{CRITICAL/HIGH<br/>Vulnerabilities?}
-    D -->|Yes| E[❌ Fail Workflow]
+    D -->|Yes| E[⚠️ Report only]
     D -->|No| F[✅ Upload Scan Results]
     E --> G[Upload to Security Tab]
     F --> H{Is Main Branch?}
@@ -29,12 +29,12 @@ Images are **always scanned before publication**:
 
 - Build happens locally first (single architecture)
 - Trivy scans for CRITICAL and HIGH severity vulnerabilities
-- If vulnerabilities found: workflow fails, image is NOT pushed
-- Scan results uploaded to GitHub Security tab regardless of outcome
+- Report-only: the scan uses `exit-code: "0"`, so findings never fail the workflow or block the push
+- Scan results are uploaded to the GitHub Security tab and printed in the log
 
 ### 2. Multi-Architecture Build
 
-Only triggered if security scan passes:
+Runs after the scan step:
 
 - Rebuilds for `linux/amd64` and `linux/arm64`
 - Uses build cache for efficiency
@@ -51,20 +51,14 @@ After successful push:
 
 ## What This Prevents
 
-✅ Publishing vulnerable container images
+⚠️ Vulnerable images are reported, not blocked (set `exit-code: "1"` in build-precommit-image.yml to enforce)
 ✅ Accidental deployment of insecure dependencies
 ✅ Supply chain attacks through compromised base images
 ✅ Pushing images from pull requests
 
-## What Happens When Scans Fail
+## What Happens When Scans Find Issues
 
-When Trivy detects CRITICAL or HIGH vulnerabilities:
-
-1. ❌ Workflow fails at the scan step
-2. 📊 Results are uploaded to GitHub Security tab
-3. 🚫 Image is NOT pushed to GHCR
-4. 📝 Previous "latest" tag remains unchanged
-5. �� GitHub notifications alert maintainers
+Because the gate is report-only, the workflow continues and the image is pushed. Review the GitHub Security tab for findings.
 
 ## How to Fix Failed Scans
 

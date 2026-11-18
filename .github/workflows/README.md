@@ -20,11 +20,11 @@ The workflow follows a **security-first** approach:
 
 2. **Security Scanning** (BEFORE pushing):
    - **Trivy**: Scans for CRITICAL and HIGH vulnerabilities
-   - **Exit on failure**: If vulnerabilities are found, the workflow stops
+   - **Report-only**: findings are reported but do not fail the workflow (`exit-code: "0"`)
    - Results uploaded to GitHub Security tab (SARIF format)
    - Console output for immediate visibility
 
-3. **Build and Push Multi-Architecture** (ONLY if Trivy passes):
+3. **Build and Push Multi-Architecture** (after the scan step):
    - Builds for both `linux/amd64` and `linux/arm64` platforms
    - Creates multiple tags:
      - `latest` - for main branch builds
