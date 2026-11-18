@@ -78,3 +78,17 @@ Removed with the old template-URL patches (still in git history) and not yet
 ported to the Helm-Job approach: Tetragon, metrics-server,
 kubelet-serving-cert-approver, the Cilium Prometheus monitoring example, and
 the PodSecurity admission config from `cluster.yaml`.
+
+## End-to-end test (Omni + Proxmox)
+
+[`scripts/e2e-omni.sh`](./scripts/e2e-omni.sh) creates a disposable 3-control-plane cluster in Omni from
+`patches/pinode.yaml`, checks Cilium and the Flux Operator, and tears it down. Run it locally:
+
+```bash
+scripts/e2e-omni.sh --dry-run                    # render the template, validate offline, no Omni calls
+OMNI_SERVICE_ACCOUNT_KEY=... scripts/e2e-omni.sh # real run; WORKER_COUNT=1 adds a worker
+```
+
+Defaults: endpoint `https://omni.ad.bonkie.net`, machine classes `proxmox-small` (control planes) and
+`proxmox-medium` (workers). It refuses to run if the cluster name already exists. The Flux git sync is a manual
+follow-up (it needs the `sops-age` Secret).
