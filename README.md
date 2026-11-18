@@ -78,3 +78,30 @@ Removed with the old template-URL patches (still in git history) and not yet
 ported to the Helm-Job approach: Tetragon, metrics-server,
 kubelet-serving-cert-approver, the Cilium Prometheus monitoring example, and
 the PodSecurity admission config from `cluster.yaml`.
+
+## End-to-end test (Omni + Proxmox)
+
+[`scripts/e2e-omni.sh`](./scripts/e2e-omni.sh) creates a disposable 3-control-plane cluster in Omni from
+`patches/pinode.yaml`, checks Cilium and the Flux Operator, and tears it down. Run it locally:
+
+```bash
+scripts/e2e-omni.sh --dry-run     # everything read-only: tool checks, pinode render diff (in a temp copy),
+                                   # template render + offline validate; with OMNI_SERVICE_ACCOUNT_KEY set
+                                   # also Omni reads (auth, cluster absent, machine classes, versions, diff)
+OMNI_SERVICE_ACCOUNT_KEY=... scripts/e2e-omni.sh --preflight  # ONLY the Omni reads, PASS/FAIL list
+scripts/e2e-omni.sh --dry-run --debug  # add step markers and omnictl exit codes (stderr always redacted)
+OMNI_SERVICE_ACCOUNT_KEY=... scripts/e2e-omni.sh              # real run; WORKER_COUNT=1 adds a worker
+scripts/test-e2e-omni.sh           # offline stub tests: dry-run/preflight never call a write subcommand
+```
+
+Talos defaults to `v1.14.6`; Kubernetes defaults to the latest 1.36.x Omni offers for that Talos. Override with
+`TALOS_VERSION`/`K8S_VERSION`. With credentials the pair is checked against what Omni offers; if 1.36.x is not
+offered the script fails and lists what is (no fallback to another minor). Without credentials the dry-run
+uses a placeholder `v1.36.0`.
+
+`--dry-run` and `--preflight` never create, change or delete anything and end with a per-step table
+(DONE / SKIPPED / WOULD-RUN) and a non-zero exit if a check fails.
+
+Defaults: endpoint `https://omni.ad.bonkie.net`, machine classes `proxmox-small` (control planes) and
+`proxmox-medium` (workers). It refuses to run if the cluster name already exists. The Flux git sync is a manual
+follow-up (it needs the `sops-age` Secret).
