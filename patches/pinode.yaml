@@ -104,7 +104,7 @@ cluster:
                 env:
                 - name: KUBECONFIG
                   value: /etc/kubeconfig/kubeconfig
-                image: alpine/k8s:1.32.13
+                image: alpine/k8s:1.34.13
                 name: cilium-install
                 volumeMounts:
                 - mountPath: /values
@@ -154,7 +154,7 @@ cluster:
                   value: /etc/kubeconfig/kubeconfig
                 - name: EXPECTED_CONTROL_PLANE_COUNT
                   value: "3"
-                image: alpine/k8s:1.32.13
+                image: alpine/k8s:1.34.13
                 name: preflight
                 volumeMounts:
                 - mountPath: /etc/kubeconfig
@@ -422,7 +422,7 @@ cluster:
                 command:
                 - /bin/sh
                 - -c
-                image: alpine/k8s:1.32.13
+                image: alpine/k8s:1.34.13
                 name: install
                 volumeMounts:
                 - mountPath: /values
@@ -453,7 +453,7 @@ cluster:
                 command:
                 - /bin/sh
                 - /scripts/retry-until.sh
-                image: alpine/k8s:1.32.13
+                image: alpine/k8s:1.34.13
                 name: apply
                 volumeMounts:
                 - mountPath: /scripts
@@ -492,7 +492,7 @@ cluster:
                 command:
                 - /bin/sh
                 - -c
-                image: alpine/k8s:1.32.13
+                image: alpine/k8s:1.34.13
                 name: decrypt
                 volumeMounts:
                 - mountPath: /encrypted

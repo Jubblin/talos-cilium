@@ -20,7 +20,7 @@ Bootstrap sources: [`cilium/`](./cilium) and [`flux-operator/`](./flux-operator)
 **1.20.5**). The daily `update-versions.yml` workflow opens a PR that bumps the
 `versions` file and both pins. Before merging, check the new Cilium release
 supports your Talos/Kubernetes versions. The `alpine/k8s` image tag is only the
-kubectl/helm client; keep it within kubectl version skew of the cluster.
+kubectl/helm client; keep it on the cluster's Kubernetes minor version.
 
 ### Compatibility check for 1.20.5
 
@@ -30,8 +30,8 @@ kubectl/helm client; keep it within kubectl version skew of the cluster.
   On Talos 1.14 or later that guide uses `KubeInlineManifestConfig` and `KubeProxyConfig`
   instead of `cluster.inlineManifests` and `cluster.proxy.disabled`; this repo still uses the older keys.
 * Helm values: none of the keys in `cilium/values.yaml` are in the [1.20 removed or renamed list][upgrade].
-* Job client: `alpine/k8s:1.32.13` is below the 1.33 minimum and only within kubectl skew
-  (one minor version) of clusters on 1.31–1.33. Set the tag to match your cluster version.
+* Cluster: Kubernetes 1.34, within Cilium 1.20's 1.33–1.36 range. The Job client image
+  `alpine/k8s:1.34.13` matches it. Keep the tag on the cluster's minor version.
 
 [k8s]: https://docs.cilium.io/en/v1.20/network/kubernetes/compatibility/
 [helm]: https://docs.cilium.io/en/v1.20/installation/k8s-install-helm/
