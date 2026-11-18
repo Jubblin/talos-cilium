@@ -55,10 +55,12 @@ The owner must create an age key, store it as the `flux-system/sops-age` Secret,
 and commit the sops-encrypted secret (steps are in the file header). The decrypt
 Job runs `apk add sops age` unpinned at runtime (accepted risk).
 
-## Single-node or other control-plane counts
+## Control-plane count
 
-The Cilium preflight expects 3 control-plane nodes. Change
-`EXPECTED_CONTROL_PLANE_COUNT` in `cilium/jobs/job.yaml` for other sizes, then re-render.
+The Cilium preflight no longer expects a fixed number of control planes. It waits up to
+15 minutes for the API, at least one control-plane node, and a node count unchanged for
+60 seconds, then installs. Trade-off: a cluster that comes up with fewer control planes
+than intended is not rejected, so check the node count in Omni.
 
 ## Cleanup after bootstrap
 

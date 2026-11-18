@@ -28,7 +28,7 @@
 # The preflight initContainer checks cluster state before helm ever runs
 # (initContainers must exit 0 before the main container starts, so this
 # is a hard gate, not a warning): API reachable through the mounted
-# kubeconfig, the expected number of control-plane nodes joined, kube-proxy
+# kubeconfig, a stable control-plane node count (bounded wait, no expected size), kube-proxy
 # actually absent (confirms cluster.proxy.disabled took effect —
 # if it's still running, Cilium's kube-proxy-replacement mode and
 # kube-proxy would fight over the same iptables/BPF rules), and no
@@ -40,6 +40,8 @@ metadata:
   name: cilium-install
 spec:
   backoffLimit: 3
+  # 15 min preflight wait + 10 min helm --wait, plus margin
+  activeDeadlineSeconds: 2400
   ttlSecondsAfterFinished: 1800
   template:
     spec:
@@ -71,21 +73,40 @@ spec:
           env:
             - name: KUBECONFIG
               value: /etc/kubeconfig/kubeconfig
-            - name: EXPECTED_CONTROL_PLANE_COUNT
-              value: "3"
           args:
             - |
               set -eu
 
-              echo "Checking API server is reachable..."
-              kubectl get --raw=/healthz
-
-              echo "Checking control-plane node count..."
-              cp_count=$(kubectl get nodes -l node-role.kubernetes.io/control-plane -o name | wc -l)
-              if [ "$cp_count" -ne "$EXPECTED_CONTROL_PLANE_COUNT" ]; then
-                echo "Expected $EXPECTED_CONTROL_PLANE_COUNT control-plane nodes, found $cp_count" >&2
-                exit 1
-              fi
+              # Wait (max 15 min) for the API, at least one control-plane node,
+              # and a control-plane count unchanged for 60 s, so a staggered
+              # join settles before Helm runs. The count is not validated
+              # against an expected size; check node count in Omni.
+              deadline=$(( $(date +%s) + 900 ))
+              last=-1
+              stable_since=$(date +%s)
+              while :; do
+                now=$(date +%s)
+                if [ "$now" -ge "$deadline" ]; then
+                  echo "Timed out waiting for a stable control-plane node count (last seen: $last)" >&2
+                  exit 1
+                fi
+                if kubectl get --raw=/healthz >/dev/null 2>&1; then
+                  cp_count=$(kubectl get nodes -l node-role.kubernetes.io/control-plane -o name 2>/dev/null | wc -l)
+                  if [ "$cp_count" -ne "$last" ]; then
+                    last=$cp_count
+                    stable_since=$now
+                  fi
+                  echo "API healthy; control-plane nodes: $cp_count (unchanged for $((now - stable_since))s)"
+                  if [ "$cp_count" -ge 1 ] && [ $((now - stable_since)) -ge 60 ]; then
+                    break
+                  fi
+                else
+                  echo "API server not reachable yet..."
+                  last=-1
+                fi
+                sleep 10
+              done
+              echo "Proceeding with $last control-plane node(s)."
 
               echo "Checking kube-proxy is disabled..."
               if kubectl -n kube-system get daemonset kube-proxy >/dev/null 2>&1; then
