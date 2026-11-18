@@ -76,6 +76,7 @@ finish_if_failed() {
   if [ "$fail_count" -gt 0 ]; then
     echo
     print_steps
+    cat "$OUT/details.txt"
     echo "$fail_count check(s) failed" >&2
     exit 1
   fi
@@ -86,7 +87,7 @@ finish_if_failed() {
 WORK=$(mktemp -d)
 OUT=$(mktemp -d)
 chmod 700 "$WORK"
-: > "$OUT/machineclass.txt"
+: > "$OUT/details.txt"
 created=0
 cleanup() {
   local rc=$?
@@ -142,57 +143,101 @@ check_repo() {
   done
 }
 
+# Replace the service-account key in text before showing omnictl output.
+redact() {
+  local t
+  t=$(cat)
+  if [ -n "${OMNI_SERVICE_ACCOUNT_KEY:-}" ]; then t=${t//"$OMNI_SERVICE_ACCOUNT_KEY"/[REDACTED]}; fi
+  printf '%s\n' "$t"
+}
+
+# One line per Talos version Omni offers: "<talos>|<k8s> <k8s> ..." (leading v stripped).
+# Tolerates snake_case and camelCase field names and a missing spec.version (falls back to the id).
+offered_table() { # offered_table <omnictl yaml>
+  printf '%s\n' "$1" | yq -r '
+    ((.spec.version // .metadata.id) | sub("^v"; "")) + "|" +
+    (((.spec.compatible_kubernetes_versions // .spec.compatibleKubernetesVersions // []) | map(sub("^v"; ""))) | join(" "))'
+}
+
+# Pick talos/k8s from the offered table. Prints "talos k8s" or nothing.
+pick_versions() { # pick_versions <table>
+  local want_t=${TALOS_VERSION#v} want_k=${K8S_VERSION#v} line t ks k best_t="" best_k=""
+  while IFS='|' read -r t ks; do
+    [ -n "$t" ] || continue
+    [ -z "$want_t" ] || [ "$t" = "$want_t" ] || continue
+    k=""
+    for v in $ks; do
+      [[ "$v" =~ ^1\.34\.[0-9]+$ ]] || continue
+      [ -z "$want_k" ] || [ "$v" = "$want_k" ] || continue
+      k=$(printf '%s\n%s\n' "$k" "$v" | sort -V | tail -n1)
+    done
+    [ -n "$k" ] || continue
+    if [ -z "$best_t" ] || [ "$(printf '%s\n%s\n' "$best_t" "$t" | sort -V | tail -n1)" = "$t" ]; then
+      best_t=$t
+      best_k=$k
+    fi
+  done <<<"$1"
+  line="$best_t $best_k"
+  [ -z "$best_t" ] || echo "$line"
+}
+
 # Omni reads only: get / list. Output may contain machine class YAML (no secrets).
 omni_reads() {
-  local out tv pick mc
-  if omnictl get cluster >/dev/null 2>&1; then
-    step DONE "Omni reachable and authenticated" "$OMNI_ENDPOINT"
-  else
-    step FAIL "Omni reachable and authenticated" "$OMNI_ENDPOINT"
+  local out tv table pick mc ids kv
+  # Listing clusters doubles as the connectivity/auth check and avoids parsing a not-found error.
+  if ! out=$(omnictl get cluster -o yaml 2>&1); then
+    step FAIL "Omni reachable and authenticated" "$OMNI_ENDPOINT: $(redact <<<"$out" | head -n3 | tr '\n' ' ')"
     return
   fi
-  # UNVERIFIED: wording of `get` for a missing cluster.
-  if out=$(omnictl get cluster "$CLUSTER_NAME" -o yaml 2>&1); then
+  step DONE "Omni reachable and authenticated" "$OMNI_ENDPOINT"
+  if ! ids=$(printf '%s\n' "$out" | yq -r '.metadata.id' 2>&1); then
+    step FAIL "cluster $CLUSTER_NAME does not exist" "cannot parse cluster list: $(redact <<<"$ids" | head -n2 | tr '\n' ' ')"
+  elif grep -Fxq -- "$CLUSTER_NAME" <<<"$ids"; then
     step FAIL "cluster $CLUSTER_NAME does not exist" "already exists; a real run would refuse"
-  elif grep -qi "not found" <<<"$out"; then
-    step DONE "cluster $CLUSTER_NAME does not exist"
   else
-    step FAIL "cluster $CLUSTER_NAME does not exist" "cannot tell: Omni error"
+    step DONE "cluster $CLUSTER_NAME does not exist"
   fi
   for mc in "$MACHINE_CLASS_CP" "$MACHINE_CLASS_WORKER"; do
-    # UNVERIFIED resource name `machineclass`
+    # UNVERIFIED-by-script, confirmed by an owner run: resource name `machineclass`
     if out=$(omnictl get machineclass "$mc" -o yaml 2>&1); then
-      { echo "machine class $mc:"; echo "$out"; } >> "$OUT/machineclass.txt"
+      { echo "machine class $mc:"; echo "$out"; } >> "$OUT/details.txt"
       step DONE "machine class $mc exists" "YAML printed below"
     else
-      step FAIL "machine class $mc exists"
+      step FAIL "machine class $mc exists" "$(redact <<<"$out" | head -n2 | tr '\n' ' ')"
     fi
   done
-  # UNVERIFIED: resource type `talosversion` and field spec.compatible_kubernetes_versions
-  if ! tv=$(omnictl get talosversion -o yaml 2>/dev/null); then
-    step FAIL "resolve Talos/Kubernetes versions" "cannot list talosversion"
+
+  if ! tv=$(omnictl get talosversion -o yaml 2>&1) && ! tv=$(omnictl get talosversions -o yaml 2>&1); then
+    step FAIL "resolve Talos/Kubernetes versions" "cannot list Talos versions: $(redact <<<"$tv" | head -n2 | tr '\n' ' ')"
     return
   fi
-  if [ -z "$TALOS_VERSION" ] || [ -z "$K8S_VERSION" ]; then
-    pick=$(printf '%s\n' "$tv" \
-      | yq -r 'select(.spec.compatible_kubernetes_versions[] | test("^1\\.34\\.")) | .spec.version' \
-      | sed 's/^v//' | sort -V | uniq | tail -n1) || true
-    if [ -z "$pick" ]; then
-      step FAIL "resolve Talos/Kubernetes versions" "no Talos version supports Kubernetes 1.34"
-      return
-    fi
-    TALOS_VERSION="${TALOS_VERSION:-$pick}"
-    K8S_VERSION="${K8S_VERSION:-$(printf '%s\n' "$tv" \
-      | yq -r "select(.spec.version == \"$pick\" or .spec.version == \"v$pick\") | .spec.compatible_kubernetes_versions[]" \
-      | sed 's/^v//' | grep '^1\.34\.' | sort -V | tail -n1)}"
+  if ! table=$(offered_table "$tv" 2>&1) || ! grep -q '|[0-9]' <<<"$table"; then
+    {
+      echo "Talos versions: could not find compatible Kubernetes versions in the resource. Raw output (first 60 lines):"
+      redact <<<"$tv" | head -n60
+    } >> "$OUT/details.txt"
+    step FAIL "resolve Talos/Kubernetes versions" "unknown resource fields; raw talosversion output below, set TALOS_VERSION and K8S_VERSION to override"
+    return
   fi
-  TALOS_VERSION="v${TALOS_VERSION#v}"
-  K8S_VERSION="v${K8S_VERSION#v}"
-  if [[ "$K8S_VERSION" =~ ^v1\.34\.[0-9]+$ ]] \
-    && [ "$(printf '%s\n' 1.11.0 "${TALOS_VERSION#v}" | sort -V | head -n1)" = 1.11.0 ]; then
+  { echo "Talos versions offered by Omni (talos: kubernetes versions):"; printf "%s\n" "${table//|/: }"; } >> "$OUT/details.txt"
+  if kv=$(omnictl get kubernetesversion -o yaml 2>/dev/null); then
+    { echo "Kubernetes versions offered by Omni:"; printf '%s\n' "$kv" | yq -r '(.spec.version // .metadata.id)' 2>/dev/null | tr '\n' ' '; echo; } >> "$OUT/details.txt"
+  fi
+  if [ -n "$K8S_VERSION" ] && ! [[ "${K8S_VERSION#v}" =~ ^1\.34\.[0-9]+$ ]]; then
+    step FAIL "resolve Talos/Kubernetes versions" "K8S_VERSION must be 1.34.x (got $K8S_VERSION); no fallback to another minor"
+    return
+  fi
+  pick=$(pick_versions "$table")
+  if [ -z "$pick" ]; then
+    step FAIL "resolve Talos/Kubernetes versions" "no offered Talos version supports Kubernetes 1.34${TALOS_VERSION:+ with TALOS_VERSION=$TALOS_VERSION}${K8S_VERSION:+ and K8S_VERSION=$K8S_VERSION}; see the offered versions below, set TALOS_VERSION/K8S_VERSION to choose"
+    return
+  fi
+  TALOS_VERSION="v${pick%% *}"
+  K8S_VERSION="v${pick##* }"
+  if [ "$(printf '%s\n' 1.11.0 "${TALOS_VERSION#v}" | sort -V | head -n1)" = 1.11.0 ]; then
     step DONE "resolve Talos/Kubernetes versions" "talos $TALOS_VERSION, kubernetes $K8S_VERSION"
   else
-    step FAIL "resolve Talos/Kubernetes versions" "need Kubernetes 1.34.x and Talos >=1.11 (got $TALOS_VERSION / $K8S_VERSION)"
+    step FAIL "resolve Talos/Kubernetes versions" "Kubernetes 1.34 needs Talos >=1.11 (picked $TALOS_VERSION); set TALOS_VERSION to a newer one"
   fi
 }
 
@@ -234,6 +279,10 @@ assert_machine_set() { # assert_machine_set kind class size
 }
 
 check_template() {
+  if [ -z "$TALOS_VERSION" ] || [ -z "$K8S_VERSION" ]; then
+    step SKIPPED "template render + offline validate" "Talos/Kubernetes versions unresolved"
+    return
+  fi
   render_template
   assert_machine_set ControlPlane "$MACHINE_CLASS_CP" "$CP_COUNT"
   if [ "$WORKER_COUNT" -gt 0 ]; then assert_machine_set Workers "$MACHINE_CLASS_WORKER" "$WORKER_COUNT"; fi
@@ -253,7 +302,7 @@ if [ "$PREFLIGHT" = 1 ]; then
   step SKIPPED "server-side template diff" "needs a rendered template; run --dry-run with credentials"
   omni_reads
   print_steps
-  cat "$OUT/machineclass.txt"
+  cat "$OUT/details.txt"
   [ "$fail_count" -eq 0 ] || { echo "$fail_count check(s) failed" >&2; exit 1; }
   exit 0
 fi
@@ -291,10 +340,12 @@ if [ "$DRY_RUN" = 1 ]; then
   step WOULD-RUN "kubectl checks: nodes, Cilium, kube-proxy, cilium-config, stability, connectivity, Flux"
   step WOULD-RUN "delete installer ClusterRoleBindings and assert gone"
   step WOULD-RUN "omnictl cluster delete $CLUSTER_NAME (teardown)"
-  echo "--- rendered template ---"
-  cat "$WORK/template.yaml"
-  echo
-  [ ! -s "$OUT/machineclass.txt" ] || { cat "$OUT/machineclass.txt"; echo; }
+  if [ -f "$WORK/template.yaml" ]; then
+    echo "--- rendered template ---"
+    cat "$WORK/template.yaml"
+    echo
+  fi
+  [ ! -s "$OUT/details.txt" ] || { cat "$OUT/details.txt"; echo; }
   echo "--- steps (dry-run: nothing was created, changed or deleted) ---"
   print_steps
   [ "$fail_count" -eq 0 ] || { echo "$fail_count check(s) failed" >&2; exit 1; }
@@ -317,7 +368,7 @@ check() { # check name cmd...
 
 {
   echo "cluster: $CLUSTER_NAME  talos: $TALOS_VERSION  kubernetes: $K8S_VERSION  workers: $WORKER_COUNT"
-  cat "$OUT/machineclass.txt"
+  cat "$OUT/details.txt"
 } >> "$SUMMARY"
 
 omnictl cluster template sync -f "$WORK/template.yaml" --allowed-dir "$WORK"

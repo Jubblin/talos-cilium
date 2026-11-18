@@ -12,15 +12,24 @@ REAL_KUBECTL=$(command -v kubectl)
 cat > "$T/bin/omnictl" <<'STUB'
 #!/bin/sh
 echo "omnictl $*" >> "$STUB_CALLS"
+if [ "${STUB_OMNI_ERROR:-0}" = 1 ]; then
+  echo "rpc error: code = Unavailable desc = connection refused (key ${OMNI_SERVICE_ACCOUNT_KEY:-})" >&2
+  exit 1
+fi
 case "$*" in
   "--version") echo "omnictl version stub" ;;
-  "get cluster") exit 0 ;;
-  "get cluster "*)
-    if [ "${STUB_CLUSTER_EXISTS:-0}" = 1 ]; then echo "name: x"; exit 0; fi
-    echo "resource not found" >&2; exit 1 ;;
-  "get machineclass "*) [ "${STUB_NO_MC:-0}" = 1 ] && { echo "not found" >&2; exit 1; }; echo "metadata: {id: $3}" ;;
-  "get talosversion"*)
-    printf 'spec:\n  version: 1.11.2\n  compatible_kubernetes_versions: [1.33.0, 1.34.0, 1.34.1]\n---\nspec:\n  version: 1.10.0\n  compatible_kubernetes_versions: [1.32.0]\n' ;;
+  "get cluster -o yaml")
+    printf 'metadata:\n  id: other-cluster\n'
+    if [ "${STUB_CLUSTER_EXISTS:-0}" = 1 ]; then printf -- '---\nmetadata:\n  id: e2e-test\n'; fi ;;
+  "get machineclass "*) if [ "${STUB_NO_MC:-0}" = 1 ]; then echo "not found" >&2; exit 1; fi; echo "metadata: {id: $3}" ;;
+  "get talosversion -o yaml"|"get talosversions -o yaml")
+    case "${STUB_TALOS:-ok}" in
+      ok) printf 'metadata:\n  id: 1.11.2\nspec:\n  version: 1.11.2\n  compatible_kubernetes_versions: [1.33.0, 1.34.0, v1.34.1]\n---\nmetadata:\n  id: 1.10.0\nspec:\n  version: 1.10.0\n  compatible_kubernetes_versions: [1.32.0]\n' ;;
+      no134) printf 'spec:\n  version: 1.11.2\n  compatible_kubernetes_versions: [1.32.0, 1.33.4]\n' ;;
+      camel) printf 'spec:\n  version: v1.11.2\n  compatibleKubernetesVersions: [1.34.2]\n' ;;
+      unknown) printf 'spec:\n  something: else\n' ;;
+    esac ;;
+  "get kubernetesversion -o yaml") printf 'spec:\n  version: 1.33.4\n' ;;
   "cluster template validate"*|"cluster template diff"*) ;;
   *) echo "unexpected omnictl call: $*" >&2; exit 99 ;;
 esac
@@ -78,6 +87,24 @@ has "$T/out" "^SKIPPED" "offline Omni reads SKIPPED" "offline Omni reads not SKI
 run "dry-run, cluster exists" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_CLUSTER_EXISTS=1 "$S" --dry-run
 no_writes "dry-run exists"
 run "dry-run, machine class missing" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_NO_MC=1 "$S" --dry-run
+
+run "dry-run, other omnictl error shows real message" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_OMNI_ERROR=1 "$S" --dry-run
+has "$T/out" "Unavailable desc = connection refused" "other error: actual omnictl message shown" "other error: message not shown"
+lacks "$T/out" "cannot tell" "other error: no vague message" "other error: vague message"
+lacks "$T/out" "key dummy" "other error: key redacted" "other error: key leaked"
+run "dry-run, 1.34 not offered fails clearly" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_TALOS=no134 "$S" --dry-run
+has "$T/out" "supports Kubernetes 1.34" "1.34 missing: clear message" "1.34 missing: unclear message"
+has "$T/out" "1.11.2: 1.32.0 1.33.4" "1.34 missing: offered versions listed" "1.34 missing: offered versions not listed"
+run "dry-run, unknown resource fields dump raw" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_TALOS=unknown "$S" --dry-run
+has "$T/out" "something: else" "unknown fields: raw resource printed" "unknown fields: raw not printed"
+run "dry-run, camelCase fields and v prefix" 0 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_TALOS=camel "$S" --dry-run
+has "$T/out" "talos v1.11.2, kubernetes v1.34.2" "camelCase resolved" "camelCase not resolved"
+run "TALOS_VERSION override not offered fails" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy TALOS_VERSION=9.9.9 "$S" --dry-run
+run "K8S_VERSION other minor rejected" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy K8S_VERSION=1.33.4 "$S" --dry-run
+run "valid overrides accepted" 0 env OMNI_SERVICE_ACCOUNT_KEY=dummy TALOS_VERSION=1.11.2 K8S_VERSION=1.34.0 "$S" --dry-run
+has "$T/out" "kubernetes v1.34.0" "override honoured" "override ignored"
+run "preflight, 1.34 not offered" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_TALOS=no134 "$S" --preflight
+has "$T/out" "^FAIL" "preflight shows FAIL line" "preflight no FAIL line"
 
 run "preflight with credentials" 0 env OMNI_SERVICE_ACCOUNT_KEY=dummy "$S" --preflight
 only_reads preflight; no_writes preflight
