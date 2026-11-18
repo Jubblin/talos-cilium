@@ -89,6 +89,7 @@ scripts/e2e-omni.sh --dry-run     # everything read-only: tool checks, pinode re
                                    # template render + offline validate; with OMNI_SERVICE_ACCOUNT_KEY set
                                    # also Omni reads (auth, cluster absent, machine classes, versions, diff)
 OMNI_SERVICE_ACCOUNT_KEY=... scripts/e2e-omni.sh --preflight  # ONLY the Omni reads, PASS/FAIL list
+scripts/e2e-omni.sh --dry-run --debug  # add step markers and omnictl exit codes (stderr always redacted)
 OMNI_SERVICE_ACCOUNT_KEY=... scripts/e2e-omni.sh              # real run; WORKER_COUNT=1 adds a worker
 scripts/test-e2e-omni.sh           # offline stub tests: dry-run/preflight never call a write subcommand
 ```

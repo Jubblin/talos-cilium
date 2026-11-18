@@ -19,7 +19,10 @@ fi
 case "$*" in
   "--version") echo "omnictl version stub" ;;
   "get cluster -o yaml")
-    printf 'metadata:\n  id: other-cluster\n'
+    if [ "${STUB_BIG:-0}" = 1 ]; then
+      i=0; while [ "$i" -lt 3000 ]; do printf -- '---\nmetadata:\n  id: other-cluster-%s\n  namespace: default\n  labels: {a: b}\n' "$i"; i=$((i + 1)); done
+    fi
+    printf -- '---\nmetadata:\n  id: other-cluster\n'
     if [ "${STUB_CLUSTER_EXISTS:-0}" = 1 ]; then printf -- '---\nmetadata:\n  id: e2e-test\n'; fi ;;
   "get machineclass "*) if [ "${STUB_NO_MC:-0}" = 1 ]; then echo "not found" >&2; exit 1; fi; echo "metadata: {id: $3}" ;;
   "get talosversion -o yaml"|"get talosversions -o yaml")
@@ -28,6 +31,9 @@ case "$*" in
       no136) printf 'spec:\n  version: 1.14.6\n  compatible_kubernetes_versions: [1.35.0, 1.37.2]\n' ;;
       camel) printf 'spec:\n  version: v1.14.6\n  compatibleKubernetesVersions: [1.36.3]\n' ;;
       unknown) printf 'spec:\n  something: else\n' ;;
+      bigunknown) i=0; while [ "$i" -lt 400 ]; do printf -- '---\nspec:\n  something: else-%s\n  more: [a, b, c, d, e, f, g, h]\n' "$i"; i=$((i + 1)); done ;;
+      big) i=0; while [ "$i" -lt 400 ]; do printf -- '---\nspec:\n  version: 1.%s.0\n  compatible_kubernetes_versions: [1.30.0, 1.31.0, 1.32.0]\n' "$i"; i=$((i + 1)); done
+           printf -- '---\nspec:\n  version: 1.14.6\n  compatible_kubernetes_versions: [1.35.2, 1.36.6]\n' ;;
     esac ;;
   "get kubernetesversion -o yaml") printf 'spec:\n  version: 1.33.4\n' ;;
   "cluster template validate"*|"cluster template diff"*) ;;
@@ -105,6 +111,29 @@ run "valid overrides accepted" 0 env OMNI_SERVICE_ACCOUNT_KEY=dummy TALOS_VERSIO
 has "$T/out" "Talos v1.11.2 with Kubernetes v1.34.1 offered" "override honoured" "override ignored"
 run "preflight, no 1.36.x offered" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_TALOS=no136 "$S" --preflight
 has "$T/out" "^FAIL" "preflight shows FAIL line" "preflight no FAIL line"
+
+# SIGPIPE regressions: huge multi-document output from omnictl must never end the script silently.
+run "preflight with huge cluster list" 0 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_BIG=1 "$S" --preflight
+has "$T/out" "^PASS .*cluster e2e-test does not exist" "huge list: results printed" "huge list: results missing"
+run "preflight with huge talosversion list" 0 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_TALOS=big "$S" --preflight
+has "$T/out" "Talos v1.14.6 with Kubernetes v1.36.6 offered" "huge talosversion: resolved" "huge talosversion: not resolved"
+run "preflight with huge unknown-field resource exits 1 with output" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_TALOS=bigunknown "$S" --preflight
+has "$T/out" "unknown resource fields" "huge unknown: FAIL line printed" "huge unknown: FAIL line missing"
+has "$T/out" "failed" "huge unknown: summary printed" "huge unknown: summary missing"
+lacks "$T/out" "step .* failed (exit" "huge unknown: no unexpected trap error" "huge unknown: script died unexpectedly"
+run "dry-run with huge unknown-field resource exits 1 with output" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_TALOS=bigunknown "$S" --dry-run
+has "$T/out" "unknown resource fields" "huge unknown dry-run: FAIL line printed" "huge unknown dry-run: FAIL line missing"
+
+# A genuinely unexpected failure (here: the render inputs are missing, so `cp -R` fails) is never silent.
+mkdir -p "$T/broken/scripts"
+cp "$ROOT/scripts/e2e-omni.sh" "$T/broken/scripts/"
+run "unexpected failure prints step name" 1 env -u OMNI_SERVICE_ACCOUNT_KEY "$T/broken/scripts/e2e-omni.sh" --dry-run
+has "$T/out" 'ERROR: step "repo consistency' "crash: error line with step name" "crash: silent exit"
+
+run "--debug prints step markers, no key" 0 env OMNI_SERVICE_ACCOUNT_KEY=dummy "$S" --preflight --debug
+has "$T/out" "\[debug\] step: Omni reads" "debug: step markers" "debug: no step markers"
+has "$T/out" "\[debug\] omnictl get exit 0" "debug: omnictl exit codes" "debug: no exit codes"
+lacks "$T/out" "dummy" "debug: key not printed" "debug: key leaked"
 
 run "preflight with credentials" 0 env OMNI_SERVICE_ACCOUNT_KEY=dummy "$S" --preflight
 only_reads preflight; no_writes preflight

@@ -3,31 +3,34 @@
 # machine classes, run health checks, print a summary path, tear the cluster down.
 # Run locally (not CI). Requires: omnictl, kubectl, yq, make.
 #
-# Usage: OMNI_SERVICE_ACCOUNT_KEY=... scripts/e2e-omni.sh [--dry-run | --preflight]
+# Usage: OMNI_SERVICE_ACCOUNT_KEY=... scripts/e2e-omni.sh [--dry-run | --preflight] [--debug]
 #   (none)       real run: creates and tears down a cluster
 #   --dry-run    everything read-only: repo checks, template render + offline validate and, if
 #                OMNI_SERVICE_ACCOUNT_KEY is set, Omni reads. Never creates/changes/deletes anything.
 #   --preflight  ONLY the Omni reads (needs OMNI_SERVICE_ACCOUNT_KEY); implies read-only.
+#   --debug      print step markers and omnictl exit codes (stderr is always redacted; never uses set -x).
 # Env: OMNI_ENDPOINT CLUSTER_NAME MACHINE_CLASS_CP MACHINE_CLASS_WORKER WORKER_COUNT
 #      TALOS_VERSION K8S_VERSION KEEP_CLUSTER
 #
 # omnictl commands/flags were checked against `omnictl --help` (v1.13.2).
 # UNVERIFIED (no Omni access when written; marked "UNVERIFIED" inline):
-#   - wording/exit code of `omnictl get cluster <name>` when the cluster is absent
+#   - wording/exit code of `omni get cluster <name>` when the cluster is absent
 #   - TalosVersion resource name and its compatible_kubernetes_versions field
-#   - MachineClass resource name for `omnictl get machineclass`
-#   - `omnictl cluster template diff` is treated as read-only: its --help only says it
+#   - MachineClass resource name for `omni get machineclass`
+#   - `omni cluster template diff` is treated as read-only: its --help only says it
 #     queries and compares resources; it was not run against Omni.
 # Read-only omnictl subcommands used before a real run: get, cluster template validate|diff, --version.
 set -euo pipefail
 
 DRY_RUN=0
 PREFLIGHT=0
+DEBUG=0
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
     --preflight) PREFLIGHT=1; DRY_RUN=1 ;; # --preflight --dry-run == --preflight
-    *) echo "usage: $0 [--dry-run | --preflight]" >&2; exit 2 ;;
+    --debug) DEBUG=1 ;;
+    *) echo "usage: $0 [--dry-run | --preflight] [--debug]" >&2; exit 2 ;;
   esac
 done
 
@@ -43,7 +46,14 @@ K8S_MINOR=1.36
 KEEP_CLUSTER="${KEEP_CLUSTER:-0}"
 CP_COUNT=3 # machine-set size lives only in the template; the repo preflight needs no count
 
-die() { echo "ERROR: $*" >&2; exit 1; }
+exec 9>&2 # debug output must not be captured by callers that merge stderr into a variable
+REPORTED=0
+CURRENT_STEP="startup"
+LAST_OMNICTL="(none)"
+die() { echo "ERROR: $*" >&2; REPORTED=1; exit 1; }
+fail_exit() { echo "$1" >&2; REPORTED=1; exit 1; } # planned failure: already explained
+dbg() { [ "$DEBUG" != 1 ] || echo "[debug] $*" >&9; }
+phase() { CURRENT_STEP=$1; dbg "step: $1"; }
 
 HAVE_CREDS=0
 if [ -n "${OMNI_SERVICE_ACCOUNT_KEY:-}" ]; then
@@ -54,32 +64,49 @@ if [ "$HAVE_CREDS" = 0 ] && { [ "$DRY_RUN" = 0 ] || [ "$PREFLIGHT" = 1 ]; }; the
   die "OMNI_SERVICE_ACCOUNT_KEY must be set in the environment"
 fi
 
-# Step table. Statuses: DONE (executed, ok), FAIL (executed, failed), SKIPPED, WOULD-RUN.
-STEPS=()
+# Replace the service-account key in text before showing omnictl output.
+# Reads all of stdin (no early exit), so it can never be killed by SIGPIPE.
+redact() {
+  local t
+  t=$(cat)
+  if [ -n "${OMNI_SERVICE_ACCOUNT_KEY:-}" ]; then t=${t//"$OMNI_SERVICE_ACCOUNT_KEY"/[REDACTED]}; fi
+  printf '%s\n' "$t"
+}
+# First N lines of stdin without a `| head` (which would SIGPIPE the producer under pipefail).
+first_lines() { awk -v n="$1" 'NR <= n'; }
+# Single-line summary of stdin for step details.
+oneline() { first_lines "${1:-3}" | tr '\n' ' '; }
+
+# All omnictl calls go through here: records the subcommand name (no args) for the exit trap,
+# and always shows stderr redacted.
+ERRF=""
+omni() {
+  local rc=0
+  LAST_OMNICTL=$1
+  [ -n "$ERRF" ] || ERRF=$(mktemp)
+  command omnictl "$@" 2>"$ERRF" || rc=$?
+  if [ -s "$ERRF" ]; then redact < "$ERRF" >&2; fi
+  dbg "omnictl $1 exit $rc"
+  return "$rc"
+}
+
+# Step results are printed as they complete. Statuses: DONE (executed, ok), FAIL, SKIPPED, WOULD-RUN.
 fail_count=0
+done_count=0
 step() { # step STATUS name [detail]
-  STEPS+=("$1|$2|${3:-}")
-  [ "$1" != FAIL ] || fail_count=$((fail_count + 1))
+  local status=$1 label=$1
+  [ "$status" != FAIL ] || fail_count=$((fail_count + 1))
+  [ "$status" != DONE ] || done_count=$((done_count + 1))
+  if [ "$PREFLIGHT" = 1 ] && [ "$status" = DONE ]; then label=PASS; fi
+  CURRENT_STEP=$2
+  printf '%-12s %s%s\n' "$label" "$2" "${3:+ ($3)}"
 }
-print_steps() {
-  local row status name detail
-  for row in "${STEPS[@]}"; do
-    IFS='|' read -r status name detail <<<"$row"
-    if [ "$PREFLIGHT" = 1 ]; then
-      [ "$status" = DONE ] && status=PASS
-      printf '%-5s %s%s\n' "$status" "$name" "${detail:+ ($detail)}"
-    else
-      printf '%-12s %s%s\n' "$status" "$name" "${detail:+ ($detail)}"
-    fi
-  done
-}
+summary_line() { echo "--- $done_count done, $fail_count failed ---"; }
 finish_if_failed() {
   if [ "$fail_count" -gt 0 ]; then
-    echo
-    print_steps
-    cat "$OUT/details.txt"
-    echo "$fail_count check(s) failed" >&2
-    exit 1
+    [ ! -s "$OUT/details.txt" ] || cat "$OUT/details.txt"
+    summary_line
+    fail_exit "$fail_count check(s) failed"
   fi
 }
 
@@ -90,20 +117,28 @@ OUT=$(mktemp -d)
 chmod 700 "$WORK"
 : > "$OUT/details.txt"
 created=0
-cleanup() {
+on_exit() {
   local rc=$?
+  trap - EXIT
+  if [ "$rc" -ne 0 ] && [ "$REPORTED" = 0 ]; then
+    echo "ERROR: step \"$CURRENT_STEP\" failed (exit $rc); last omnictl command: $LAST_OMNICTL" >&2
+  fi
+  # Teardown only runs once a real run has synced a cluster (created=1).
   if [ "$created" = 1 ] && [[ "$CLUSTER_NAME" == e2e-* ]] && [ "$KEEP_CLUSTER" != 1 ]; then
     echo "Tearing down $CLUSTER_NAME..."
-    omnictl cluster delete "$CLUSTER_NAME" || echo "WARNING: teardown failed; delete $CLUSTER_NAME manually in Omni" >&2
+    omni cluster delete "$CLUSTER_NAME" || echo "WARNING: teardown failed; delete $CLUSTER_NAME manually in Omni" >&2
   elif [ "$created" = 1 ]; then
     echo "KEEP_CLUSTER=1: leaving $CLUSTER_NAME in place"
   fi
-  rm -rf "$WORK"
-  return $rc
+  rm -rf "$WORK" "$ERRF"
+  [ "$DRY_RUN" = 0 ] || rm -rf "$OUT" # only a real run keeps its summary directory
+  exit "$rc"
 }
-trap 'rm -rf "$WORK"' EXIT # replaced by cleanup only after the cluster is created (real run)
+trap on_exit EXIT
+trap 'REPORTED=1; exit 141' PIPE # reader went away: still run cleanup and teardown
 
 check_inputs() {
+  phase "input validation"
   [[ "$CLUSTER_NAME" =~ ^e2e-[a-z0-9-]+$ ]] || die "CLUSTER_NAME must match ^e2e-[a-z0-9-]+\$"
   [[ "$WORKER_COUNT" =~ ^[0-9]+$ ]] || die "WORKER_COUNT must be a number"
   [[ "$MACHINE_CLASS_CP" =~ ^[a-z0-9-]+$ ]] || die "MACHINE_CLASS_CP must match ^[a-z0-9-]+\$"
@@ -114,6 +149,7 @@ check_inputs() {
 }
 
 check_tools() {
+  phase "tool checks"
   local t v
   for t in omnictl kubectl yq make; do
     if ! command -v "$t" >/dev/null 2>&1; then
@@ -121,10 +157,10 @@ check_tools() {
       continue
     fi
     case "$t" in
-      omnictl) v=$(omnictl --version 2>&1 | head -n1) || v=unknown ;;
-      kubectl) v=$(kubectl version --client 2>&1 | head -n1) || v=unknown ;;
-      yq) v=$(yq --version 2>&1 | head -n1) || v=unknown ;;
-      *) v=$(make --version 2>&1 | head -n1) || v=unknown ;;
+      omnictl) v=$(omnictl --version 2>&1 | first_lines 1) || v=unknown ;;
+      kubectl) v=$(kubectl version --client 2>&1 | first_lines 1) || v=unknown ;;
+      yq) v=$(yq --version 2>&1 | first_lines 1) || v=unknown ;;
+      *) v=$(make --version 2>&1 | first_lines 1) || v=unknown ;;
     esac
     step DONE "tool $t" "$v"
   done
@@ -132,6 +168,7 @@ check_tools() {
 
 # Copy the render inputs to a temp dir so the working tree is never touched.
 check_repo() {
+  phase "repo consistency (render-pinode, kustomize)"
   local r="$WORK/repo"
   mkdir -p "$r"
   cp -R "$REPO_ROOT/cilium" "$REPO_ROOT/flux-operator" "$REPO_ROOT/patches" "$REPO_ROOT/Makefile" "$r/"
@@ -144,14 +181,6 @@ check_repo() {
   for d in cilium flux-operator; do
     if kubectl kustomize "$REPO_ROOT/$d" >/dev/null 2>&1; then step DONE "kubectl kustomize $d"; else step FAIL "kubectl kustomize $d"; fi
   done
-}
-
-# Replace the service-account key in text before showing omnictl output.
-redact() {
-  local t
-  t=$(cat)
-  if [ -n "${OMNI_SERVICE_ACCOUNT_KEY:-}" ]; then t=${t//"$OMNI_SERVICE_ACCOUNT_KEY"/[REDACTED]}; fi
-  printf '%s\n' "$t"
 }
 
 # One line per Talos version Omni offers: "<talos>|<k8s> <k8s> ..." (leading v stripped).
@@ -189,44 +218,47 @@ latest_k8s_for_talos() { # latest_k8s_for_talos <table>
 
 # Omni reads only: get / list. Output may contain machine class YAML (no secrets).
 omni_reads() {
+  phase "Omni reads: list clusters"
   local out tv table mc ids kv
   # Listing clusters doubles as the connectivity/auth check and avoids parsing a not-found error.
-  if ! out=$(omnictl get cluster -o yaml 2>&1); then
-    step FAIL "Omni reachable and authenticated" "$OMNI_ENDPOINT: $(redact <<<"$out" | head -n3 | tr '\n' ' ')"
+  if ! out=$(omni get cluster -o yaml 2>&1); then
+    step FAIL "Omni reachable and authenticated" "$OMNI_ENDPOINT: $(redact <<<"$out" | oneline 3)"
     return
   fi
   step DONE "Omni reachable and authenticated" "$OMNI_ENDPOINT"
   if ! ids=$(printf '%s\n' "$out" | yq -r '.metadata.id' 2>&1); then
-    step FAIL "cluster $CLUSTER_NAME does not exist" "cannot parse cluster list: $(redact <<<"$ids" | head -n2 | tr '\n' ' ')"
+    step FAIL "cluster $CLUSTER_NAME does not exist" "cannot parse cluster list: $(redact <<<"$ids" | oneline 2)"
   elif grep -Fxq -- "$CLUSTER_NAME" <<<"$ids"; then
     step FAIL "cluster $CLUSTER_NAME does not exist" "already exists; a real run would refuse"
   else
     step DONE "cluster $CLUSTER_NAME does not exist"
   fi
+  phase "Omni reads: machine classes"
   for mc in "$MACHINE_CLASS_CP" "$MACHINE_CLASS_WORKER"; do
     # UNVERIFIED-by-script, confirmed by an owner run: resource name `machineclass`
-    if out=$(omnictl get machineclass "$mc" -o yaml 2>&1); then
+    if out=$(omni get machineclass "$mc" -o yaml 2>&1); then
       { echo "machine class $mc:"; echo "$out"; } >> "$OUT/details.txt"
       step DONE "machine class $mc exists" "YAML printed below"
     else
-      step FAIL "machine class $mc exists" "$(redact <<<"$out" | head -n2 | tr '\n' ' ')"
+      step FAIL "machine class $mc exists" "$(redact <<<"$out" | oneline 2)"
     fi
   done
 
-  if ! tv=$(omnictl get talosversion -o yaml 2>&1) && ! tv=$(omnictl get talosversions -o yaml 2>&1); then
-    step FAIL "resolve Talos/Kubernetes versions" "cannot list Talos versions: $(redact <<<"$tv" | head -n2 | tr '\n' ' ')"
+  phase "Omni reads: Talos versions"
+  if ! tv=$(omni get talosversion -o yaml 2>&1) && ! tv=$(omni get talosversions -o yaml 2>&1); then
+    step FAIL "resolve Talos/Kubernetes versions" "cannot list Talos versions: $(redact <<<"$tv" | oneline 2)"
     return
   fi
   if ! table=$(offered_table "$tv" 2>&1) || ! grep -q '|[0-9]' <<<"$table"; then
     {
       echo "Talos versions: could not find compatible Kubernetes versions in the resource. Raw output (first 60 lines):"
-      redact <<<"$tv" | head -n60
+      redact <<<"$tv" | first_lines 60
     } >> "$OUT/details.txt"
     step FAIL "resolve Talos/Kubernetes versions" "unknown resource fields; raw talosversion output below, set TALOS_VERSION and K8S_VERSION to override"
     return
   fi
   { echo "Talos versions offered by Omni (talos: kubernetes versions):"; printf "%s\n" "${table//|/: }"; } >> "$OUT/details.txt"
-  if kv=$(omnictl get kubernetesversion -o yaml 2>/dev/null); then
+  if kv=$(omni get kubernetesversion -o yaml 2>/dev/null); then
     { echo "Kubernetes versions offered by Omni:"; printf '%s\n' "$kv" | yq -r '(.spec.version // .metadata.id)' 2>/dev/null | tr '\n' ' '; echo; } >> "$OUT/details.txt"
   fi
   TALOS_VERSION="v${TALOS_VERSION#v}"
@@ -285,6 +317,7 @@ assert_machine_set() { # assert_machine_set kind class size
 }
 
 check_template() {
+  phase "template render and offline validate"
   if [ -z "$TALOS_VERSION" ] || [ -z "$K8S_VERSION" ]; then
     step SKIPPED "template render + offline validate" "Talos/Kubernetes versions unresolved"
     return
@@ -293,7 +326,7 @@ check_template() {
   assert_machine_set ControlPlane "$MACHINE_CLASS_CP" "$CP_COUNT"
   if [ "$WORKER_COUNT" -gt 0 ]; then assert_machine_set Workers "$MACHINE_CLASS_WORKER" "$WORKER_COUNT"; fi
   # Offline: validates the template structure and the pinode.yaml file reference.
-  if omnictl cluster template validate -f "$WORK/template.yaml" --allowed-dir "$WORK" >/dev/null 2>&1; then
+  if omni cluster template validate -f "$WORK/template.yaml" --allowed-dir "$WORK" >/dev/null 2>&1; then
     step DONE "omnictl cluster template validate (offline)"
   else
     step FAIL "omnictl cluster template validate (offline)"
@@ -307,9 +340,9 @@ if [ "$PREFLIGHT" = 1 ]; then
   command -v yq >/dev/null || die "missing tool: yq"
   step SKIPPED "server-side template diff" "needs a rendered template; run --dry-run with credentials"
   omni_reads
-  print_steps
-  cat "$OUT/details.txt"
-  [ "$fail_count" -eq 0 ] || { echo "$fail_count check(s) failed" >&2; exit 1; }
+  [ ! -s "$OUT/details.txt" ] || cat "$OUT/details.txt"
+  summary_line
+  [ "$fail_count" -eq 0 ] || fail_exit "$fail_count check(s) failed"
   exit 0
 fi
 
@@ -330,7 +363,7 @@ fi
 check_template
 if [ "$DRY_RUN" = 1 ] && [ "$HAVE_CREDS" = 1 ]; then
   # `template diff` only queries and compares (per --help); UNVERIFIED against a live Omni.
-  if omnictl cluster template diff -f "$WORK/template.yaml" --allowed-dir "$WORK" >/dev/null 2>&1; then
+  if omni cluster template diff -f "$WORK/template.yaml" --allowed-dir "$WORK" >/dev/null 2>&1; then
     step DONE "omnictl cluster template diff (server-side preview)"
   else
     step FAIL "omnictl cluster template diff (server-side preview)"
@@ -351,9 +384,9 @@ if [ "$DRY_RUN" = 1 ]; then
     echo
   fi
   [ ! -s "$OUT/details.txt" ] || { cat "$OUT/details.txt"; echo; }
-  echo "--- steps (dry-run: nothing was created, changed or deleted) ---"
-  print_steps
-  [ "$fail_count" -eq 0 ] || { echo "$fail_count check(s) failed" >&2; exit 1; }
+  echo "(dry-run: nothing was created, changed or deleted)"
+  summary_line
+  [ "$fail_count" -eq 0 ] || fail_exit "$fail_count check(s) failed"
   exit 0
 fi
 finish_if_failed
@@ -376,11 +409,10 @@ check() { # check name cmd...
   cat "$OUT/details.txt"
 } >> "$SUMMARY"
 
-omnictl cluster template sync -f "$WORK/template.yaml" --allowed-dir "$WORK"
+omni cluster template sync -f "$WORK/template.yaml" --allowed-dir "$WORK"
 created=1
-trap cleanup EXIT
 
-if omnictl cluster template status -f "$WORK/template.yaml" --allowed-dir "$WORK" --wait 30m >/dev/null 2>&1; then
+if omni cluster template status -f "$WORK/template.yaml" --allowed-dir "$WORK" --wait 30m >/dev/null 2>&1; then
   record PASS "cluster ready"
 else
   record FAIL "cluster ready"
@@ -388,7 +420,7 @@ fi
 
 export KUBECONFIG="$WORK/kubeconfig"
 # A service-account kubeconfig avoids the interactive OIDC login.
-omnictl kubeconfig "$KUBECONFIG" -c "$CLUSTER_NAME" --service-account --user e2e-test --merge=false --force >/dev/null \
+omni kubeconfig "$KUBECONFIG" -c "$CLUSTER_NAME" --service-account --user e2e-test --merge=false --force >/dev/null \
   || die "could not fetch kubeconfig"
 chmod 600 "$KUBECONFIG"
 k() { kubectl --request-timeout=60s "$@"; }
