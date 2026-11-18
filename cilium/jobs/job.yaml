@@ -29,7 +29,7 @@
 # (initContainers must exit 0 before the main container starts, so this
 # is a hard gate, not a warning): API reachable through the mounted
 # kubeconfig, the expected number of control-plane nodes joined, kube-proxy
-# actually absent (confirms talos/patches/cni-kubeproxy.yaml took effect —
+# actually absent (confirms cluster.proxy.disabled took effect —
 # if it's still running, Cilium's kube-proxy-replacement mode and
 # kube-proxy would fight over the same iptables/BPF rules), and no
 # previous cilium release stuck mid-install from a killed/failed prior run
@@ -89,7 +89,7 @@ spec:
 
               echo "Checking kube-proxy is disabled..."
               if kubectl -n kube-system get daemonset kube-proxy >/dev/null 2>&1; then
-                echo "kube-proxy DaemonSet is still present — talos/patches/cni-kubeproxy.yaml (cluster.proxy.disabled) was not applied to this cluster" >&2
+                echo "kube-proxy DaemonSet is still present — cluster.proxy.disabled was not applied to this cluster" >&2
                 exit 1
               fi
 
@@ -120,7 +120,7 @@ spec:
               helm repo add cilium https://helm.cilium.io/
               helm repo update
               helm upgrade --install cilium cilium/cilium \
-                --version 1.18.0 \
+                --version 1.20.5 \
                 --namespace kube-system \
                 -f /values/values.yaml \
                 --wait --timeout 10m

@@ -59,4 +59,4 @@ spec:
       volumes:
         - name: values
           configMap:
-            name: flux-values
+            name: flux-operator-values
