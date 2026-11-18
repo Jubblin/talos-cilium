@@ -186,9 +186,32 @@ check_repo() {
 # One line per Talos version Omni offers: "<talos>|<k8s> <k8s> ..." (leading v stripped).
 # Tolerates snake_case and camelCase field names and a missing spec.version (falls back to the id).
 offered_table() { # offered_table <omnictl yaml>
-  printf '%s\n' "$1" | yq -r '
+  # Keys are matched case- and underscore-insensitively (compatiblekubernetesversions,
+  # compatible_kubernetes_versions, compatibleKubernetesVersions all work).
+  printf '%s\n' "$1" | yq -N -r '
     ((.spec.version // .metadata.id) | sub("^v"; "")) + "|" +
-    (((.spec.compatible_kubernetes_versions // .spec.compatibleKubernetesVersions // []) | map(sub("^v"; ""))) | join(" "))'
+    ((((.spec // {}) | to_entries
+      | map(select((.key | downcase | sub("_"; "";"g")) == "compatiblekubernetesversions"))
+      | .[0].value // []) | map(sub("^v"; ""))) | join(" "))'
+}
+
+# Compact view of the offered table, sorted by Talos version: "1.14.6: k8s 1.33–1.36".
+format_offered() { # format_offered <table>
+  printf '%s\n' "$1" | sort -V | awk -F'|' '
+    NF < 2 || $1 == "" { next }
+    {
+      delete seen; n = split($2, a, " "); cnt = 0
+      for (i = 1; i <= n; i++) { split(a[i], p, "."); if (!(p[2] in seen)) { seen[p[2]] = 1; mins[++cnt] = p[2] + 0 } }
+      # insertion sort of minors
+      for (i = 2; i <= cnt; i++) { v = mins[i]; j = i - 1; while (j > 0 && mins[j] > v) { mins[j + 1] = mins[j]; j-- } mins[j + 1] = v }
+      out = ""; i = 1
+      while (i <= cnt) {
+        j = i; while (j < cnt && mins[j + 1] == mins[j] + 1) j++
+        r = (i == j) ? "1." mins[i] : "1." mins[i] "–1." mins[j]
+        out = out (out == "" ? "" : ", ") r; i = j + 1
+      }
+      printf "%s: k8s %s\n", $1, (out == "" ? "(none listed)" : out)
+    }'
 }
 
 # True if the offered table lists TALOS_VERSION with K8S_VERSION.
@@ -219,7 +242,7 @@ latest_k8s_for_talos() { # latest_k8s_for_talos <table>
 # Omni reads only: get / list. Output may contain machine class YAML (no secrets).
 omni_reads() {
   phase "Omni reads: list clusters"
-  local out tv table mc ids kv
+  local out tv table mc ids kv compact
   # Listing clusters doubles as the connectivity/auth check and avoids parsing a not-found error.
   if ! out=$(omni get cluster -o yaml 2>&1); then
     step FAIL "Omni reachable and authenticated" "$OMNI_ENDPOINT: $(redact <<<"$out" | oneline 3)"
@@ -257,15 +280,22 @@ omni_reads() {
     step FAIL "resolve Talos/Kubernetes versions" "unknown resource fields; raw talosversion output below, set TALOS_VERSION and K8S_VERSION to override"
     return
   fi
-  { echo "Talos versions offered by Omni (talos: kubernetes versions):"; printf "%s\n" "${table//|/: }"; } >> "$OUT/details.txt"
+  compact=$(format_offered "$table")
+  { echo "Talos versions offered by Omni (supported Kubernetes minors):"; echo "$compact"; } >> "$OUT/details.txt"
   if kv=$(omni get kubernetesversion -o yaml 2>/dev/null); then
     { echo "Kubernetes versions offered by Omni:"; printf '%s\n' "$kv" | yq -r '(.spec.version // .metadata.id)' 2>/dev/null | tr '\n' ' '; echo; } >> "$OUT/details.txt"
   fi
   TALOS_VERSION="v${TALOS_VERSION#v}"
+  local mine
+  mine=$(grep -F -- "${TALOS_VERSION#v}: " <<<"$compact" | awk -v t="${TALOS_VERSION#v}:" '$1 == t' || true)
+  if [ -z "$mine" ]; then
+    step FAIL "resolve Talos/Kubernetes versions" "Omni does not offer Talos $TALOS_VERSION; newest offered: $(tail -n5 <<<"$compact" | awk '{printf "%s%s", (NR > 1 ? "; " : ""), $0}')"
+    return
+  fi
   if [ -z "$K8S_VERSION" ]; then
     K8S_VERSION=$(latest_k8s_for_talos "$table")
     if [ -z "$K8S_VERSION" ]; then
-      step FAIL "resolve Talos/Kubernetes versions" "Omni offers no Kubernetes $K8S_MINOR.x for Talos $TALOS_VERSION; see the offered versions below and set TALOS_VERSION/K8S_VERSION (no fallback to another minor)"
+      step FAIL "resolve Talos/Kubernetes versions" "Omni offers no Kubernetes $K8S_MINOR.x for Talos $TALOS_VERSION; it supports: ${mine#*: k8s } (see the list below; set TALOS_VERSION/K8S_VERSION, no fallback to another minor)"
       return
     fi
   fi
@@ -273,7 +303,7 @@ omni_reads() {
   # The pair must be offered exactly: the Talos version exists and lists this Kubernetes version.
   # No fallback to another version; the offered table is in the details below.
   if ! pair_offered "$table"; then
-    step FAIL "resolve Talos/Kubernetes versions" "Omni does not offer Talos $TALOS_VERSION with Kubernetes $K8S_VERSION; see the offered versions below and set TALOS_VERSION/K8S_VERSION"
+    step FAIL "resolve Talos/Kubernetes versions" "Omni does not offer Talos $TALOS_VERSION with Kubernetes $K8S_VERSION; Talos $TALOS_VERSION supports: ${mine#*: k8s } (set TALOS_VERSION/K8S_VERSION)"
   else
     step DONE "Talos $TALOS_VERSION with Kubernetes $K8S_VERSION offered by Omni"
   fi

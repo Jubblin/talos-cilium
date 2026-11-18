@@ -30,6 +30,9 @@ case "$*" in
       ok) printf 'metadata:\n  id: 1.14.6\nspec:\n  version: 1.14.6\n  compatible_kubernetes_versions: [1.35.2, 1.36.2, v1.36.6, 1.37.2]\n---\nmetadata:\n  id: 1.11.2\nspec:\n  version: 1.11.2\n  compatible_kubernetes_versions: [1.33.0, 1.34.1]\n' ;;
       no136) printf 'spec:\n  version: 1.14.6\n  compatible_kubernetes_versions: [1.35.0, 1.37.2]\n' ;;
       camel) printf 'spec:\n  version: v1.14.6\n  compatibleKubernetesVersions: [1.36.3]\n' ;;
+      lower) printf 'metadata: {namespace: default, type: TalosVersions.omni.sidero.dev, id: 1.10.0, version: 3}\nspec:\n  version: 1.10.0\n  compatiblekubernetesversions: [1.28.0, 1.28.1, 1.29.4, 1.30.13]\n---\nmetadata: {id: 1.13.5}\nspec:\n  version: 1.13.5\n  compatiblekubernetesversions: [1.31.0, 1.32.2, 1.33.1, 1.34.0, 1.35.3]\n---\nmetadata: {id: 1.14.6}\nspec:\n  version: 1.14.6\n  compatiblekubernetesversions: [1.33.0, 1.34.1, 1.35.2, 1.36.2, 1.36.6]\n' ;;
+      lowerno136) printf 'metadata: {id: 1.14.6}\nspec:\n  version: 1.14.6\n  compatiblekubernetesversions: [1.33.0, 1.34.1, 1.35.2]\n' ;;
+      nottalos) printf 'metadata: {id: 1.13.5}\nspec:\n  version: 1.13.5\n  compatiblekubernetesversions: [1.31.0, 1.35.3]\n---\nmetadata: {id: 1.15.0}\nspec:\n  version: 1.15.0\n  compatiblekubernetesversions: [1.36.0, 1.37.0]\n' ;;
       unknown) printf 'spec:\n  something: else\n' ;;
       bigunknown) i=0; while [ "$i" -lt 400 ]; do printf -- '---\nspec:\n  something: else-%s\n  more: [a, b, c, d, e, f, g, h]\n' "$i"; i=$((i + 1)); done ;;
       big) i=0; while [ "$i" -lt 400 ]; do printf -- '---\nspec:\n  version: 1.%s.0\n  compatible_kubernetes_versions: [1.30.0, 1.31.0, 1.32.0]\n' "$i"; i=$((i + 1)); done
@@ -100,7 +103,8 @@ lacks "$T/out" "cannot tell" "other error: no vague message" "other error: vague
 lacks "$T/out" "key dummy" "other error: key redacted" "other error: key leaked"
 run "dry-run, no K8s 1.36.x offered fails clearly" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_TALOS=no136 "$S" --dry-run
 has "$T/out" "Omni offers no Kubernetes 1.36.x for Talos v1.14.6" "not offered: clear message" "not offered: unclear message"
-has "$T/out" "1.14.6: 1.35.0 1.37.2" "not offered: offered versions listed" "not offered: offered versions not listed"
+has "$T/out" "1.14.6: k8s 1.35, 1.37" "no 1.36: compact offered list" "no 1.36: compact list missing"
+has "$T/out" "it supports: 1.35, 1.37" "no 1.36: supported minors named" "no 1.36: minors not named"
 run "dry-run, unknown resource fields dump raw" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_TALOS=unknown "$S" --dry-run
 has "$T/out" "something: else" "unknown fields: raw resource printed" "unknown fields: raw not printed"
 run "dry-run, camelCase fields and v prefix" 0 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_TALOS=camel "$S" --dry-run
@@ -134,6 +138,18 @@ run "--debug prints step markers, no key" 0 env OMNI_SERVICE_ACCOUNT_KEY=dummy "
 has "$T/out" "\[debug\] step: Omni reads" "debug: step markers" "debug: no step markers"
 has "$T/out" "\[debug\] omnictl get exit 0" "debug: omnictl exit codes" "debug: no exit codes"
 lacks "$T/out" "dummy" "debug: key not printed" "debug: key leaked"
+
+# Real Omni shape: all-lowercase key, ids without "v", several Talos versions.
+run "real Omni shape (compatiblekubernetesversions) resolves latest 1.36.x" 0 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_TALOS=lower "$S" --preflight
+has "$T/out" "Talos v1.14.6 with Kubernetes v1.36.6 offered" "lowercase key: resolved 1.36.6" "lowercase key: not resolved"
+has "$T/out" "1.10.0: k8s 1.28–1.30" "lowercase key: compact range" "lowercase key: no compact range"
+has "$T/out" "1.14.6: k8s 1.33–1.36" "lowercase key: 1.14.6 range" "lowercase key: no 1.14.6 range"
+lacks "$T/out" "unknown resource fields" "lowercase key: fields recognised" "lowercase key: fields unknown"
+run "Talos 1.14.6 offered but no 1.36.x lists its minors" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_TALOS=lowerno136 "$S" --preflight
+has "$T/out" "it supports: 1.33–1.35" "no 1.36: minors listed" "no 1.36: minors not listed"
+run "Talos 1.14.6 not offered says so and lists newest" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_TALOS=nottalos "$S" --preflight
+has "$T/out" "does not offer Talos v1.14.6; newest offered: 1.13.5: k8s" "not offered: explicit message" "not offered: message missing"
+has "$T/out" "1.15.0: k8s 1.36–1.37" "not offered: newest versions with ranges" "not offered: no newest versions"
 
 run "preflight with credentials" 0 env OMNI_SERVICE_ACCOUNT_KEY=dummy "$S" --preflight
 only_reads preflight; no_writes preflight
