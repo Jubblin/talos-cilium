@@ -24,9 +24,9 @@ case "$*" in
   "get machineclass "*) if [ "${STUB_NO_MC:-0}" = 1 ]; then echo "not found" >&2; exit 1; fi; echo "metadata: {id: $3}" ;;
   "get talosversion -o yaml"|"get talosversions -o yaml")
     case "${STUB_TALOS:-ok}" in
-      ok) printf 'metadata:\n  id: 1.11.2\nspec:\n  version: 1.11.2\n  compatible_kubernetes_versions: [1.33.0, 1.34.0, v1.34.1]\n---\nmetadata:\n  id: 1.10.0\nspec:\n  version: 1.10.0\n  compatible_kubernetes_versions: [1.32.0]\n' ;;
-      no134) printf 'spec:\n  version: 1.11.2\n  compatible_kubernetes_versions: [1.32.0, 1.33.4]\n' ;;
-      camel) printf 'spec:\n  version: v1.11.2\n  compatibleKubernetesVersions: [1.34.2]\n' ;;
+      ok) printf 'metadata:\n  id: 1.14.6\nspec:\n  version: 1.14.6\n  compatible_kubernetes_versions: [1.36.2, v1.37.2]\n---\nmetadata:\n  id: 1.11.2\nspec:\n  version: 1.11.2\n  compatible_kubernetes_versions: [1.33.0, 1.34.1]\n' ;;
+      no137) printf 'spec:\n  version: 1.14.6\n  compatible_kubernetes_versions: [1.35.0, 1.36.2]\n' ;;
+      camel) printf 'spec:\n  version: v1.14.6\n  compatibleKubernetesVersions: [1.37.2]\n' ;;
       unknown) printf 'spec:\n  something: else\n' ;;
     esac ;;
   "get kubernetesversion -o yaml") printf 'spec:\n  version: 1.33.4\n' ;;
@@ -77,7 +77,7 @@ run "dry-run with credentials" 0 env OMNI_SERVICE_ACCOUNT_KEY=dummy "$S" --dry-r
 no_writes dry-run; only_reads dry-run
 has "$T/calls" "omnictl get machineclass proxmox-small" "dry-run read machine class" "dry-run read machine class missing"
 has "$T/calls" "cluster template diff" "dry-run ran template diff" "dry-run did not run template diff"
-has "$T/out" "talos v1.11.2, kubernetes v1.34.1" "dry-run resolved versions" "dry-run did not resolve versions"
+has "$T/out" "Talos v1.14.6 with Kubernetes v1.37.2 offered" "dry-run validated default versions" "dry-run did not validate default versions"
 lacks "$T/out" dummy "key not in output" "key leaked to output"
 
 run "dry-run without credentials" 0 env -u OMNI_SERVICE_ACCOUNT_KEY "$S" --dry-run
@@ -92,18 +92,18 @@ run "dry-run, other omnictl error shows real message" 1 env OMNI_SERVICE_ACCOUNT
 has "$T/out" "Unavailable desc = connection refused" "other error: actual omnictl message shown" "other error: message not shown"
 lacks "$T/out" "cannot tell" "other error: no vague message" "other error: vague message"
 lacks "$T/out" "key dummy" "other error: key redacted" "other error: key leaked"
-run "dry-run, 1.34 not offered fails clearly" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_TALOS=no134 "$S" --dry-run
-has "$T/out" "supports Kubernetes 1.34" "1.34 missing: clear message" "1.34 missing: unclear message"
-has "$T/out" "1.11.2: 1.32.0 1.33.4" "1.34 missing: offered versions listed" "1.34 missing: offered versions not listed"
+run "dry-run, K8s 1.37.2 not offered fails clearly" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_TALOS=no137 "$S" --dry-run
+has "$T/out" "does not offer Talos v1.14.6 with Kubernetes v1.37.2" "not offered: clear message" "not offered: unclear message"
+has "$T/out" "1.14.6: 1.35.0 1.36.2" "not offered: offered versions listed" "not offered: offered versions not listed"
 run "dry-run, unknown resource fields dump raw" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_TALOS=unknown "$S" --dry-run
 has "$T/out" "something: else" "unknown fields: raw resource printed" "unknown fields: raw not printed"
 run "dry-run, camelCase fields and v prefix" 0 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_TALOS=camel "$S" --dry-run
-has "$T/out" "talos v1.11.2, kubernetes v1.34.2" "camelCase resolved" "camelCase not resolved"
+has "$T/out" "Talos v1.14.6 with Kubernetes v1.37.2 offered" "camelCase validated" "camelCase not validated"
 run "TALOS_VERSION override not offered fails" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy TALOS_VERSION=9.9.9 "$S" --dry-run
-run "K8S_VERSION other minor rejected" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy K8S_VERSION=1.33.4 "$S" --dry-run
-run "valid overrides accepted" 0 env OMNI_SERVICE_ACCOUNT_KEY=dummy TALOS_VERSION=1.11.2 K8S_VERSION=1.34.0 "$S" --dry-run
-has "$T/out" "kubernetes v1.34.0" "override honoured" "override ignored"
-run "preflight, 1.34 not offered" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_TALOS=no134 "$S" --preflight
+run "K8S_VERSION not offered for Talos is rejected (no fallback)" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy K8S_VERSION=1.33.0 "$S" --dry-run
+run "valid overrides accepted" 0 env OMNI_SERVICE_ACCOUNT_KEY=dummy TALOS_VERSION=1.11.2 K8S_VERSION=1.34.1 "$S" --dry-run
+has "$T/out" "Talos v1.11.2 with Kubernetes v1.34.1 offered" "override honoured" "override ignored"
+run "preflight, 1.34 not offered" 1 env OMNI_SERVICE_ACCOUNT_KEY=dummy STUB_TALOS=no137 "$S" --preflight
 has "$T/out" "^FAIL" "preflight shows FAIL line" "preflight no FAIL line"
 
 run "preflight with credentials" 0 env OMNI_SERVICE_ACCOUNT_KEY=dummy "$S" --preflight
