@@ -115,6 +115,16 @@ render_template
 # Offline: validates the template structure and the pinode.yaml file reference.
 omnictl cluster template validate -f "$WORK/template.yaml" --allowed-dir "$WORK"
 
+# Guard against a template that silently drops a machine set.
+assert_machine_set() { # assert_machine_set kind class size
+  local t="$WORK/template.yaml"
+  if ! grep -q "^kind: $1\$" "$t" || ! grep -q "name: $2\$" "$t" || ! grep -q "size: $3\$" "$t"; then
+    die "rendered template is missing the $1 machine set ($2 x $3)"
+  fi
+}
+assert_machine_set ControlPlane "$MACHINE_CLASS_CP" "$CP_COUNT"
+if [ "$WORKER_COUNT" -gt 0 ]; then assert_machine_set Workers "$MACHINE_CLASS_WORKER" "$WORKER_COUNT"; fi
+
 if [ "$DRY_RUN" = 1 ]; then
   echo "--- rendered template ---"
   cat "$WORK/template.yaml"
