@@ -38,7 +38,8 @@ MACHINE_CLASS_CP="${MACHINE_CLASS_CP:-proxmox-small}"
 MACHINE_CLASS_WORKER="${MACHINE_CLASS_WORKER:-proxmox-medium}"
 WORKER_COUNT="${WORKER_COUNT:-0}"
 TALOS_VERSION="${TALOS_VERSION:-v1.14.6}"
-K8S_VERSION="${K8S_VERSION:-v1.37.2}"
+K8S_VERSION="${K8S_VERSION:-}" # default: latest ${K8S_MINOR}.x that Omni offers for TALOS_VERSION
+K8S_MINOR=1.36
 KEEP_CLUSTER="${KEEP_CLUSTER:-0}"
 CP_COUNT=3 # machine-set size lives only in the template; the repo preflight needs no count
 
@@ -108,7 +109,7 @@ check_inputs() {
   [[ "$MACHINE_CLASS_CP" =~ ^[a-z0-9-]+$ ]] || die "MACHINE_CLASS_CP must match ^[a-z0-9-]+\$"
   [[ "$MACHINE_CLASS_WORKER" =~ ^[a-z0-9-]+$ ]] || die "MACHINE_CLASS_WORKER must match ^[a-z0-9-]+\$"
   [[ "${TALOS_VERSION#v}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "TALOS_VERSION must look like v1.14.6"
-  [[ "${K8S_VERSION#v}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "K8S_VERSION must look like v1.37.2"
+  [ -z "$K8S_VERSION" ] || [[ "${K8S_VERSION#v}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "K8S_VERSION must look like v1.36.6"
   step DONE "input validation"
 }
 
@@ -173,6 +174,19 @@ pair_offered() { # pair_offered <table>
   return 1
 }
 
+# Highest ${K8S_MINOR}.x offered for TALOS_VERSION; prints nothing if none.
+latest_k8s_for_talos() { # latest_k8s_for_talos <table>
+  local t ks v best=""
+  while IFS='|' read -r t ks; do
+    [ "$t" = "${TALOS_VERSION#v}" ] || continue
+    for v in $ks; do
+      [[ "$v" =~ ^${K8S_MINOR//./\\.}\.[0-9]+$ ]] || continue
+      best=$(printf '%s\n%s\n' "$best" "$v" | sort -V | tail -n1)
+    done
+  done <<<"$1"
+  [ -z "$best" ] || echo "$best"
+}
+
 # Omni reads only: get / list. Output may contain machine class YAML (no secrets).
 omni_reads() {
   local out tv table mc ids kv
@@ -216,6 +230,13 @@ omni_reads() {
     { echo "Kubernetes versions offered by Omni:"; printf '%s\n' "$kv" | yq -r '(.spec.version // .metadata.id)' 2>/dev/null | tr '\n' ' '; echo; } >> "$OUT/details.txt"
   fi
   TALOS_VERSION="v${TALOS_VERSION#v}"
+  if [ -z "$K8S_VERSION" ]; then
+    K8S_VERSION=$(latest_k8s_for_talos "$table")
+    if [ -z "$K8S_VERSION" ]; then
+      step FAIL "resolve Talos/Kubernetes versions" "Omni offers no Kubernetes $K8S_MINOR.x for Talos $TALOS_VERSION; see the offered versions below and set TALOS_VERSION/K8S_VERSION (no fallback to another minor)"
+      return
+    fi
+  fi
   K8S_VERSION="v${K8S_VERSION#v}"
   # The pair must be offered exactly: the Talos version exists and lists this Kubernetes version.
   # No fallback to another version; the offered table is in the details below.
@@ -301,9 +322,10 @@ if [ "$HAVE_CREDS" = 1 ]; then
   omni_reads
 else
   TALOS_VERSION="v${TALOS_VERSION#v}"
+  K8S_VERSION="${K8S_VERSION:-$K8S_MINOR.0}"
   K8S_VERSION="v${K8S_VERSION#v}"
   step SKIPPED "Omni reads (connectivity, cluster absent, machine classes, versions offered)" \
-    "no credentials; $TALOS_VERSION / $K8S_VERSION not checked against Omni"
+    "no credentials; $TALOS_VERSION / $K8S_VERSION not checked against Omni (placeholder unless overridden)"
 fi
 check_template
 if [ "$DRY_RUN" = 1 ] && [ "$HAVE_CREDS" = 1 ]; then

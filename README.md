@@ -93,9 +93,10 @@ OMNI_SERVICE_ACCOUNT_KEY=... scripts/e2e-omni.sh              # real run; WORKER
 scripts/test-e2e-omni.sh           # offline stub tests: dry-run/preflight never call a write subcommand
 ```
 
-Versions default to Talos `v1.14.6` and Kubernetes `v1.37.2`; override with
-`TALOS_VERSION`/`K8S_VERSION`.
-With credentials the pair is checked against what Omni offers (no fallback to another version).
+Talos defaults to `v1.14.6`; Kubernetes defaults to the latest 1.36.x Omni offers for that Talos. Override with
+`TALOS_VERSION`/`K8S_VERSION`. With credentials the pair is checked against what Omni offers; if 1.36.x is not
+offered the script fails and lists what is (no fallback to another minor). Without credentials the dry-run
+uses a placeholder `v1.36.0`.
 
 `--dry-run` and `--preflight` never create, change or delete anything and end with a per-step table
 (DONE / SKIPPED / WOULD-RUN) and a non-zero exit if a check fails.
