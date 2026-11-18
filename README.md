@@ -24,14 +24,16 @@ kubectl/helm client; keep it on the cluster's Kubernetes minor version.
 
 ### Compatibility check for 1.20.5
 
-* Kubernetes: Cilium 1.20 supports 1.33–1.36 ([compatibility table][k8s]).
+* Target: Talos 1.14.6, Kubernetes 1.36.x, Cilium 1.20.5. Cilium 1.20 supports Kubernetes 1.33–1.36, so 1.36 is the
+  newest supported version ([compatibility table][k8s]). Kubernetes 1.37 is not supported by any stable Cilium yet.
 * Talos: Cilium requires Talos 1.5.0 or later and kernel 5.10 or later ([install guide][helm]).
   The values in `cilium/values.yaml` match the [Talos Cilium guide][talos] for kube-proxy-free mode.
-  On Talos 1.14 or later that guide uses `KubeInlineManifestConfig` and `KubeProxyConfig`
-  instead of `cluster.inlineManifests` and `cluster.proxy.disabled`; this repo still uses the older keys.
+* Talos 1.14 deprecates `cluster.inlineManifests`, `cluster.proxy` and `cluster.network` in favour of the
+  `KubeInlineManifestConfig`, `KubeProxyConfig` and `KubeFlannelCNIConfig` documents. This repo keeps the old keys:
+  they are deprecated, not removed, and they also work on Talos 1.13 and earlier. Not yet confirmed on a live 1.14.6
+  cluster; migrate if the first run rejects them.
 * Helm values: none of the keys in `cilium/values.yaml` are in the [1.20 removed or renamed list][upgrade].
-* Cluster: Kubernetes 1.34, within Cilium 1.20's 1.33–1.36 range. The Job client image
-  `alpine/k8s:1.34.13` matches it. Keep the tag on the cluster's minor version.
+* Job client: `alpine/k8s:1.36.6` matches the cluster's Kubernetes minor. Keep the tag on the cluster's minor version.
 
 [k8s]: https://docs.cilium.io/en/v1.20/network/kubernetes/compatibility/
 [helm]: https://docs.cilium.io/en/v1.20/installation/k8s-install-helm/
