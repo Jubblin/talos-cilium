@@ -85,9 +85,16 @@ the PodSecurity admission config from `cluster.yaml`.
 `patches/pinode.yaml`, checks Cilium and the Flux Operator, and tears it down. Run it locally:
 
 ```bash
-scripts/e2e-omni.sh --dry-run                    # render the template, validate offline, no Omni calls
-OMNI_SERVICE_ACCOUNT_KEY=... scripts/e2e-omni.sh # real run; WORKER_COUNT=1 adds a worker
+scripts/e2e-omni.sh --dry-run     # everything read-only: tool checks, pinode render diff (in a temp copy),
+                                   # template render + offline validate; with OMNI_SERVICE_ACCOUNT_KEY set
+                                   # also Omni reads (auth, cluster absent, machine classes, versions, diff)
+OMNI_SERVICE_ACCOUNT_KEY=... scripts/e2e-omni.sh --preflight  # ONLY the Omni reads, PASS/FAIL list
+OMNI_SERVICE_ACCOUNT_KEY=... scripts/e2e-omni.sh              # real run; WORKER_COUNT=1 adds a worker
+scripts/test-e2e-omni.sh           # offline stub tests: dry-run/preflight never call a write subcommand
 ```
+
+`--dry-run` and `--preflight` never create, change or delete anything and end with a per-step table
+(DONE / SKIPPED / WOULD-RUN) and a non-zero exit if a check fails.
 
 Defaults: endpoint `https://omni.ad.bonkie.net`, machine classes `proxmox-small` (control planes) and
 `proxmox-medium` (workers). It refuses to run if the cluster name already exists. The Flux git sync is a manual

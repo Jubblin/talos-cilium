@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # E2E test: create a disposable Omni cluster from patches/pinode.yaml on Proxmox
 # machine classes, run health checks, print a summary path, tear the cluster down.
-# Run locally (not CI). Requires: omnictl, kubectl, yq.
+# Run locally (not CI). Requires: omnictl, kubectl, yq, make.
 #
-# Usage: OMNI_SERVICE_ACCOUNT_KEY=... scripts/e2e-omni.sh [--dry-run]
+# Usage: OMNI_SERVICE_ACCOUNT_KEY=... scripts/e2e-omni.sh [--dry-run | --preflight]
+#   (none)       real run: creates and tears down a cluster
+#   --dry-run    everything read-only: repo checks, template render + offline validate and, if
+#                OMNI_SERVICE_ACCOUNT_KEY is set, Omni reads. Never creates/changes/deletes anything.
+#   --preflight  ONLY the Omni reads (needs OMNI_SERVICE_ACCOUNT_KEY); implies read-only.
 # Env: OMNI_ENDPOINT CLUSTER_NAME MACHINE_CLASS_CP MACHINE_CLASS_WORKER WORKER_COUNT
 #      TALOS_VERSION K8S_VERSION KEEP_CLUSTER
 #
@@ -12,10 +16,20 @@
 #   - wording/exit code of `omnictl get cluster <name>` when the cluster is absent
 #   - TalosVersion resource name and its compatible_kubernetes_versions field
 #   - MachineClass resource name for `omnictl get machineclass`
+#   - `omnictl cluster template diff` is treated as read-only: its --help only says it
+#     queries and compares resources; it was not run against Omni.
+# Read-only omnictl subcommands used before a real run: get, cluster template validate|diff, --version.
 set -euo pipefail
 
 DRY_RUN=0
-[ "${1:-}" = "--dry-run" ] && DRY_RUN=1
+PREFLIGHT=0
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) DRY_RUN=1 ;;
+    --preflight) PREFLIGHT=1; DRY_RUN=1 ;; # --preflight --dry-run == --preflight
+    *) echo "usage: $0 [--dry-run | --preflight]" >&2; exit 2 ;;
+  esac
+done
 
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 export OMNI_ENDPOINT="${OMNI_ENDPOINT:-https://omni.ad.bonkie.net}"
@@ -30,19 +44,49 @@ CP_COUNT=3 # machine-set size lives only in the template; the repo preflight nee
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
-[[ "$CLUSTER_NAME" =~ ^e2e-[a-z0-9-]+$ ]] || die "CLUSTER_NAME must match ^e2e-[a-z0-9-]+\$"
-[[ "$WORKER_COUNT" =~ ^[0-9]+$ ]] || die "WORKER_COUNT must be a number"
-for t in omnictl kubectl yq; do command -v "$t" >/dev/null || die "missing tool: $t"; done
-if [ "$DRY_RUN" = 0 ]; then
-  [ -n "${OMNI_SERVICE_ACCOUNT_KEY:-}" ] || die "OMNI_SERVICE_ACCOUNT_KEY must be set in the environment"
+HAVE_CREDS=0
+if [ -n "${OMNI_SERVICE_ACCOUNT_KEY:-}" ]; then
+  HAVE_CREDS=1
   export OMNI_SERVICE_ACCOUNT_KEY
 fi
+if [ "$HAVE_CREDS" = 0 ] && { [ "$DRY_RUN" = 0 ] || [ "$PREFLIGHT" = 1 ]; }; then
+  die "OMNI_SERVICE_ACCOUNT_KEY must be set in the environment"
+fi
 
-# WORK holds the template and kubeconfig and is always removed.
+# Step table. Statuses: DONE (executed, ok), FAIL (executed, failed), SKIPPED, WOULD-RUN.
+STEPS=()
+fail_count=0
+step() { # step STATUS name [detail]
+  STEPS+=("$1|$2|${3:-}")
+  [ "$1" != FAIL ] || fail_count=$((fail_count + 1))
+}
+print_steps() {
+  local row status name detail
+  for row in "${STEPS[@]}"; do
+    IFS='|' read -r status name detail <<<"$row"
+    if [ "$PREFLIGHT" = 1 ]; then
+      [ "$status" = DONE ] && status=PASS
+      printf '%-5s %s%s\n' "$status" "$name" "${detail:+ ($detail)}"
+    else
+      printf '%-12s %s%s\n' "$status" "$name" "${detail:+ ($detail)}"
+    fi
+  done
+}
+finish_if_failed() {
+  if [ "$fail_count" -gt 0 ]; then
+    echo
+    print_steps
+    echo "$fail_count check(s) failed" >&2
+    exit 1
+  fi
+}
+
+# WORK holds the template, repo copy and kubeconfig and is always removed.
 # OUT holds only the summary (no secrets) and is kept so its path can be printed.
 WORK=$(mktemp -d)
 OUT=$(mktemp -d)
 chmod 700 "$WORK"
+: > "$OUT/machineclass.txt"
 created=0
 cleanup() {
   local rc=$?
@@ -55,30 +99,101 @@ cleanup() {
   rm -rf "$WORK"
   return $rc
 }
-trap 'rm -rf "$WORK"' EXIT # replaced by cleanup only after the cluster is created
+trap 'rm -rf "$WORK"' EXIT # replaced by cleanup only after the cluster is created (real run)
 
-# Pick a Talos/K8s pair supporting Kubernetes 1.34 unless both are given.
-resolve_versions() {
-  if [ "$DRY_RUN" = 1 ]; then
-    TALOS_VERSION="${TALOS_VERSION:-v1.11.0}"
-    K8S_VERSION="${K8S_VERSION:-v1.34.0}"
-    echo "(dry-run) versions not resolved from Omni; using ${TALOS_VERSION} / ${K8S_VERSION}"
-  elif [ -z "$TALOS_VERSION" ] || [ -z "$K8S_VERSION" ]; then
-    # UNVERIFIED: resource type `talosversion` and field spec.compatible_kubernetes_versions
-    local tv pick
-    tv=$(omnictl get talosversion -o yaml) || die "cannot list Talos versions from Omni"
+check_inputs() {
+  [[ "$CLUSTER_NAME" =~ ^e2e-[a-z0-9-]+$ ]] || die "CLUSTER_NAME must match ^e2e-[a-z0-9-]+\$"
+  [[ "$WORKER_COUNT" =~ ^[0-9]+$ ]] || die "WORKER_COUNT must be a number"
+  [[ "$MACHINE_CLASS_CP" =~ ^[a-z0-9-]+$ ]] || die "MACHINE_CLASS_CP must match ^[a-z0-9-]+\$"
+  [[ "$MACHINE_CLASS_WORKER" =~ ^[a-z0-9-]+$ ]] || die "MACHINE_CLASS_WORKER must match ^[a-z0-9-]+\$"
+  step DONE "input validation"
+}
+
+check_tools() {
+  local t v
+  for t in omnictl kubectl yq make; do
+    if ! command -v "$t" >/dev/null 2>&1; then
+      step FAIL "tool $t" "not installed"
+      continue
+    fi
+    case "$t" in
+      omnictl) v=$(omnictl --version 2>&1 | head -n1) || v=unknown ;;
+      kubectl) v=$(kubectl version --client 2>&1 | head -n1) || v=unknown ;;
+      yq) v=$(yq --version 2>&1 | head -n1) || v=unknown ;;
+      *) v=$(make --version 2>&1 | head -n1) || v=unknown ;;
+    esac
+    step DONE "tool $t" "$v"
+  done
+}
+
+# Copy the render inputs to a temp dir so the working tree is never touched.
+check_repo() {
+  local r="$WORK/repo"
+  mkdir -p "$r"
+  cp -R "$REPO_ROOT/cilium" "$REPO_ROOT/flux-operator" "$REPO_ROOT/patches" "$REPO_ROOT/Makefile" "$r/"
+  if (cd "$r" && make render-pinode >/dev/null 2>&1) && diff -q "$r/patches/pinode.yaml" "$REPO_ROOT/patches/pinode.yaml" >/dev/null; then
+    step DONE "patches/pinode.yaml matches make render-pinode"
+  else
+    step FAIL "patches/pinode.yaml matches make render-pinode" "run make render-pinode and commit"
+  fi
+  local d
+  for d in cilium flux-operator; do
+    if kubectl kustomize "$REPO_ROOT/$d" >/dev/null 2>&1; then step DONE "kubectl kustomize $d"; else step FAIL "kubectl kustomize $d"; fi
+  done
+}
+
+# Omni reads only: get / list. Output may contain machine class YAML (no secrets).
+omni_reads() {
+  local out tv pick mc
+  if omnictl get cluster >/dev/null 2>&1; then
+    step DONE "Omni reachable and authenticated" "$OMNI_ENDPOINT"
+  else
+    step FAIL "Omni reachable and authenticated" "$OMNI_ENDPOINT"
+    return
+  fi
+  # UNVERIFIED: wording of `get` for a missing cluster.
+  if out=$(omnictl get cluster "$CLUSTER_NAME" -o yaml 2>&1); then
+    step FAIL "cluster $CLUSTER_NAME does not exist" "already exists; a real run would refuse"
+  elif grep -qi "not found" <<<"$out"; then
+    step DONE "cluster $CLUSTER_NAME does not exist"
+  else
+    step FAIL "cluster $CLUSTER_NAME does not exist" "cannot tell: Omni error"
+  fi
+  for mc in "$MACHINE_CLASS_CP" "$MACHINE_CLASS_WORKER"; do
+    # UNVERIFIED resource name `machineclass`
+    if out=$(omnictl get machineclass "$mc" -o yaml 2>&1); then
+      { echo "machine class $mc:"; echo "$out"; } >> "$OUT/machineclass.txt"
+      step DONE "machine class $mc exists" "YAML printed below"
+    else
+      step FAIL "machine class $mc exists"
+    fi
+  done
+  # UNVERIFIED: resource type `talosversion` and field spec.compatible_kubernetes_versions
+  if ! tv=$(omnictl get talosversion -o yaml 2>/dev/null); then
+    step FAIL "resolve Talos/Kubernetes versions" "cannot list talosversion"
+    return
+  fi
+  if [ -z "$TALOS_VERSION" ] || [ -z "$K8S_VERSION" ]; then
     pick=$(printf '%s\n' "$tv" \
       | yq -r 'select(.spec.compatible_kubernetes_versions[] | test("^1\\.34\\.")) | .spec.version' \
-      | sed 's/^v//' | sort -V | tail -n1) || true
-    [ -n "$pick" ] || die "no Talos version in Omni supports Kubernetes 1.34"
+      | sed 's/^v//' | sort -V | uniq | tail -n1) || true
+    if [ -z "$pick" ]; then
+      step FAIL "resolve Talos/Kubernetes versions" "no Talos version supports Kubernetes 1.34"
+      return
+    fi
     TALOS_VERSION="${TALOS_VERSION:-$pick}"
     K8S_VERSION="${K8S_VERSION:-$(printf '%s\n' "$tv" \
       | yq -r "select(.spec.version == \"$pick\" or .spec.version == \"v$pick\") | .spec.compatible_kubernetes_versions[]" \
       | sed 's/^v//' | grep '^1\.34\.' | sort -V | tail -n1)}"
   fi
-  [[ "$TALOS_VERSION" == v* ]] || TALOS_VERSION="v$TALOS_VERSION"
-  [[ "$K8S_VERSION" == v* ]] || K8S_VERSION="v$K8S_VERSION"
-  [[ "$K8S_VERSION" =~ ^v1\.34\.[0-9]+$ ]] || die "K8S_VERSION must be 1.34.x (got '$K8S_VERSION')"
+  TALOS_VERSION="v${TALOS_VERSION#v}"
+  K8S_VERSION="v${K8S_VERSION#v}"
+  if [[ "$K8S_VERSION" =~ ^v1\.34\.[0-9]+$ ]] \
+    && [ "$(printf '%s\n' 1.11.0 "${TALOS_VERSION#v}" | sort -V | head -n1)" = 1.11.0 ]; then
+    step DONE "resolve Talos/Kubernetes versions" "talos $TALOS_VERSION, kubernetes $K8S_VERSION"
+  else
+    step FAIL "resolve Talos/Kubernetes versions" "need Kubernetes 1.34.x and Talos >=1.11 (got $TALOS_VERSION / $K8S_VERSION)"
+  fi
 }
 
 render_template() {
@@ -110,11 +225,6 @@ YAML
   fi
 }
 
-resolve_versions
-render_template
-# Offline: validates the template structure and the pinode.yaml file reference.
-omnictl cluster template validate -f "$WORK/template.yaml" --allowed-dir "$WORK"
-
 # Guard against a template that silently drops a machine set.
 assert_machine_set() { # assert_machine_set kind class size
   local t="$WORK/template.yaml"
@@ -122,32 +232,75 @@ assert_machine_set() { # assert_machine_set kind class size
     die "rendered template is missing the $1 machine set ($2 x $3)"
   fi
 }
-assert_machine_set ControlPlane "$MACHINE_CLASS_CP" "$CP_COUNT"
-if [ "$WORKER_COUNT" -gt 0 ]; then assert_machine_set Workers "$MACHINE_CLASS_WORKER" "$WORKER_COUNT"; fi
 
-if [ "$DRY_RUN" = 1 ]; then
-  echo "--- rendered template ---"
-  cat "$WORK/template.yaml"
-  cat <<PLAN
+check_template() {
+  render_template
+  assert_machine_set ControlPlane "$MACHINE_CLASS_CP" "$CP_COUNT"
+  if [ "$WORKER_COUNT" -gt 0 ]; then assert_machine_set Workers "$MACHINE_CLASS_WORKER" "$WORKER_COUNT"; fi
+  # Offline: validates the template structure and the pinode.yaml file reference.
+  if omnictl cluster template validate -f "$WORK/template.yaml" --allowed-dir "$WORK" >/dev/null 2>&1; then
+    step DONE "omnictl cluster template validate (offline)"
+  else
+    step FAIL "omnictl cluster template validate (offline)"
+  fi
+}
 
---- planned steps (dry-run: nothing was sent to Omni) ---
-1. refuse if cluster ${CLUSTER_NAME} already exists
-2. omnictl cluster template sync, then arm teardown (cluster delete) unless KEEP_CLUSTER=1
-3. wait for the cluster to be ready; fetch a service-account kubeconfig into a temp dir
-4. checks: nodes Ready, cilium-install Job Complete, Cilium DaemonSet, no kube-proxy, cilium-config,
-   10 min stability, DNS/ClusterIP/NodePort/cross-node connectivity, Flux operator Jobs and FluxInstance
-5. delete installer ClusterRoleBindings and assert they are gone
-6. print summary path; tear down
-PLAN
+# ---- preflight: only the Omni reads ----
+if [ "$PREFLIGHT" = 1 ]; then
+  check_inputs
+  command -v omnictl >/dev/null || die "missing tool: omnictl"
+  command -v yq >/dev/null || die "missing tool: yq"
+  step SKIPPED "server-side template diff" "needs a rendered template; run --dry-run with credentials"
+  omni_reads
+  print_steps
+  cat "$OUT/machineclass.txt"
+  [ "$fail_count" -eq 0 ] || { echo "$fail_count check(s) failed" >&2; exit 1; }
   exit 0
 fi
 
-# Refuse to touch an existing cluster. UNVERIFIED: wording of `get` for a missing cluster.
-if out=$(omnictl get cluster "$CLUSTER_NAME" -o yaml 2>&1); then
-  die "cluster $CLUSTER_NAME already exists; refusing"
-elif ! grep -qi "not found" <<<"$out"; then
-  die "cannot determine whether $CLUSTER_NAME exists (Omni unreachable or auth failed)"
+# ---- read-only phase (dry-run and real run) ----
+check_inputs
+check_tools
+finish_if_failed
+check_repo
+if [ "$HAVE_CREDS" = 1 ]; then
+  omni_reads
+else
+  if [ -z "$TALOS_VERSION" ]; then TALOS_VERSION=v1.11.0; fi
+  if [ -z "$K8S_VERSION" ]; then K8S_VERSION=v1.34.0; fi
+  TALOS_VERSION="v${TALOS_VERSION#v}"
+  K8S_VERSION="v${K8S_VERSION#v}"
+  step SKIPPED "Omni reads (connectivity, cluster absent, machine classes, version resolution)" \
+    "no credentials; placeholder versions $TALOS_VERSION / $K8S_VERSION"
 fi
+check_template
+if [ "$DRY_RUN" = 1 ] && [ "$HAVE_CREDS" = 1 ]; then
+  # `template diff` only queries and compares (per --help); UNVERIFIED against a live Omni.
+  if omnictl cluster template diff -f "$WORK/template.yaml" --allowed-dir "$WORK" >/dev/null 2>&1; then
+    step DONE "omnictl cluster template diff (server-side preview)"
+  else
+    step FAIL "omnictl cluster template diff (server-side preview)"
+  fi
+elif [ "$DRY_RUN" = 1 ]; then
+  step SKIPPED "omnictl cluster template diff (server-side preview)" "no credentials"
+fi
+
+if [ "$DRY_RUN" = 1 ]; then
+  step WOULD-RUN "omnictl cluster template sync, then arm teardown"
+  step WOULD-RUN "wait for cluster ready; fetch service-account kubeconfig"
+  step WOULD-RUN "kubectl checks: nodes, Cilium, kube-proxy, cilium-config, stability, connectivity, Flux"
+  step WOULD-RUN "delete installer ClusterRoleBindings and assert gone"
+  step WOULD-RUN "omnictl cluster delete $CLUSTER_NAME (teardown)"
+  echo "--- rendered template ---"
+  cat "$WORK/template.yaml"
+  echo
+  [ ! -s "$OUT/machineclass.txt" ] || { cat "$OUT/machineclass.txt"; echo; }
+  echo "--- steps (dry-run: nothing was created, changed or deleted) ---"
+  print_steps
+  [ "$fail_count" -eq 0 ] || { echo "$fail_count check(s) failed" >&2; exit 1; }
+  exit 0
+fi
+finish_if_failed
 
 SUMMARY="$OUT/summary.txt"
 : > "$SUMMARY"
@@ -164,12 +317,7 @@ check() { # check name cmd...
 
 {
   echo "cluster: $CLUSTER_NAME  talos: $TALOS_VERSION  kubernetes: $K8S_VERSION  workers: $WORKER_COUNT"
-  echo "machine class $MACHINE_CLASS_CP:"
-  omnictl get machineclass "$MACHINE_CLASS_CP" -o yaml 2>&1 || true # UNVERIFIED resource name
-  if [ "$WORKER_COUNT" -gt 0 ]; then
-    echo "machine class $MACHINE_CLASS_WORKER:"
-    omnictl get machineclass "$MACHINE_CLASS_WORKER" -o yaml 2>&1 || true
-  fi
+  cat "$OUT/machineclass.txt"
 } >> "$SUMMARY"
 
 omnictl cluster template sync -f "$WORK/template.yaml" --allowed-dir "$WORK"
