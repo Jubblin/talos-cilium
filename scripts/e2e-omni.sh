@@ -283,7 +283,7 @@ omni_reads() {
   compact=$(format_offered "$table")
   { echo "Talos versions offered by Omni (supported Kubernetes minors):"; echo "$compact"; } >> "$OUT/details.txt"
   if kv=$(omni get kubernetesversion -o yaml 2>/dev/null); then
-    { echo "Kubernetes versions offered by Omni:"; printf '%s\n' "$kv" | yq -r '(.spec.version // .metadata.id)' 2>/dev/null | tr '\n' ' '; echo; } >> "$OUT/details.txt"
+    { echo "Kubernetes versions offered by Omni:"; printf '%s\n' "$kv" | yq -N -r '((.spec.version // .metadata.id) // "")' 2>/dev/null | tr '\n' ' '; echo; } >> "$OUT/details.txt"
   fi
   TALOS_VERSION="v${TALOS_VERSION#v}"
   local mine
