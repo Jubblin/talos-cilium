@@ -24,10 +24,19 @@ kubectl/helm client; keep it within kubectl version skew of the cluster.
 
 ### Compatibility check for 1.20.5
 
-* Kubernetes: Cilium 1.20 supports 1.33–1.36 ([compatibility table](https://docs.cilium.io/en/v1.20/network/kubernetes/compatibility/)).
-* Talos: Cilium requires Talos 1.5.0 or later ([Helm install guide](https://docs.cilium.io/en/v1.20/installation/k8s-install-helm/)); kernel 5.10 or later. The values in `cilium/values.yaml` match the [Talos Cilium guide](https://docs.siderolabs.com/kubernetes-guides/cni/deploying-cilium) for kube-proxy-free mode. On Talos 1.14 or later the guide uses `KubeInlineManifestConfig` and `KubeProxyConfig` instead of `cluster.inlineManifests` and `cluster.proxy.disabled`; this repo still uses the older keys.
-* Helm values: none of the keys in `cilium/values.yaml` appear in the [1.20 removed or renamed list](https://docs.cilium.io/en/v1.20/operations/upgrade/).
-* Job client: `alpine/k8s:1.32.13` is below the 1.33 minimum and only within kubectl skew (one minor version) of clusters on 1.31–1.33. Set the tag to match your cluster version.
+* Kubernetes: Cilium 1.20 supports 1.33–1.36 ([compatibility table][k8s]).
+* Talos: Cilium requires Talos 1.5.0 or later and kernel 5.10 or later ([install guide][helm]).
+  The values in `cilium/values.yaml` match the [Talos Cilium guide][talos] for kube-proxy-free mode.
+  On Talos 1.14 or later that guide uses `KubeInlineManifestConfig` and `KubeProxyConfig`
+  instead of `cluster.inlineManifests` and `cluster.proxy.disabled`; this repo still uses the older keys.
+* Helm values: none of the keys in `cilium/values.yaml` are in the [1.20 removed or renamed list][upgrade].
+* Job client: `alpine/k8s:1.32.13` is below the 1.33 minimum and only within kubectl skew
+  (one minor version) of clusters on 1.31–1.33. Set the tag to match your cluster version.
+
+[k8s]: https://docs.cilium.io/en/v1.20/network/kubernetes/compatibility/
+[helm]: https://docs.cilium.io/en/v1.20/installation/k8s-install-helm/
+[talos]: https://docs.siderolabs.com/kubernetes-guides/cni/deploying-cilium
+[upgrade]: https://docs.cilium.io/en/v1.20/operations/upgrade/
 
 ## Re-rendering pinode.yaml
 
